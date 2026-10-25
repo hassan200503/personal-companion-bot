@@ -20,11 +20,12 @@ The existing WhatsApp bot is legacy. It must keep working. Do not modify or dele
 - Verified provider terms, limits, data handling and available signup/key documentation for Groq, Gemini, OpenRouter, Cerebras and Mistral, and recorded which items remain open.
 - Verified code-signing options: unsigned SmartScreen behaviour, Azure Artifact Signing price and availability, OV/EV prices, SignPath Foundation conditions and the private-repo blocker.
 - Wrote the G1 ADR recommending Electron + TypeScript, Windows 11 25H2/26H2 x64 as the baseline, an isolated `companion/` layout, and an unsigned v1 with SHA256.
+- Committed the M0 documents locally as `34f164a` (`M0: record verification findings and propose Electron stack`). Nothing has been pushed.
 
 ## In progress
 
 - M0 exit: the verification log is filled and open items are marked; the ADR is drafted. Owner approval at G1 is outstanding.
-- Local git commit of the M0 documents is pending.
+- Local commit `34f164a` contains the M0 documents. A small follow-up commit records this state.
 
 ## Blocked
 
@@ -80,4 +81,4 @@ There is no companion build, test, lint or typecheck command yet. Do not invent 
 
 ## Handover note
 
-Read `docs/MASTER_PROMPT.md` completely, then this file, then the ADR. The next agent should not scaffold anything until the owner answers G1. The legacy WhatsApp bot is separate and must remain untouched. The M0 documents are the current deliverable; commit them locally after review, and never push without owner approval. If the session ends before G1, the state is complete: no companion code, no generated secrets, no provider accounts and no spending.
+Read `docs/MASTER_PROMPT.md` completely, then this file, then the ADR. The next agent should not scaffold anything until the owner answers G1. The legacy WhatsApp bot is separate and must remain untouched. The M0 documents are committed locally as `34f164a`; do not push without owner approval. If the session ends before G1, the state is complete: no companion code, no generated secrets, no provider accounts and no spending.
