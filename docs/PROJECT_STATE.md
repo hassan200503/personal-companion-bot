@@ -1,9 +1,9 @@
 # Project State
 
 Last updated: 2026-10-25
-Current milestone: M1, Scaffold
-Current task: record the M1 commit, then prepare the G2 encryption proposal
-Status: M1 scaffold committed locally as `bb0815b`; local verification green; GitHub CI and clean-machine install remain unverified
+Current milestone: M2, Storage and secrets (G2 proposal)
+Current task: owner review of `docs/DECISIONS/ADR-0002-storage-encryption.md` at G2; no storage code written
+Status: waiting on owner; M1 scaffold committed as `bb0815b`; local verification green; GitHub CI and clean-machine install remain unverified
 
 ## What this project is
 
@@ -28,31 +28,36 @@ The existing WhatsApp bot is legacy. It must keep working. Do not modify or dele
 - Built the unsigned NSIS installer: 115.9 MiB, unpacked 359.1 MiB across 73 files, SHA256 `CEE02741491F0BF7253E05879BC85E49FE2BBAED228FCC76A9228EC451165CDB`, Authenticode `NotSigned`.
 - Wrote the M1 milestone report at `docs/MILESTONES/M1.md`.
 - Committed the M1 scaffold and report locally as `bb0815b` (`M1: scaffold Electron companion with config, logger and CI`). Nothing has been pushed.
+- Committed the M1 state record as `a35d58d` (`M1: record local commit in project state`). Nothing has been pushed.
+- Researched storage and key protection for G2: SQLCipher Community and Commercial licensing, SQLite3MultipleCiphers, `better-sqlite3-multiple-ciphers` 13.0.3, Electron async `safeStorage`/DPAPI, Windows Credential Manager and `@github/keytar`. Evidence is D-01 to D-06 in `docs/VERIFICATION_LOG.md`.
+- Wrote `docs/DECISIONS/ADR-0002-storage-encryption.md` proposing a SQLCipher-compatible encrypted database, a DPAPI-wrapped random database key, Windows Credential Manager for provider keys, passphrase backups, and prototype gates.
+- Wrote the initial `docs/THREAT_MODEL.md` covering local storage, provider egress, backup exposure, same-user malware and future tool risks.
 
 ## In progress
 
+- G2 is awaiting the owner's decision. No encryption package, database, key, credential entry, backup or migration code exists.
 - M1 scaffold and report are committed as `bb0815b`. CI execution on GitHub and a clean-machine install remain open.
-- The G2 encryption proposal has not been written yet.
 
 ## Blocked
 
 | Item | Reason | Unblock condition |
 | --- | --- | --- |
+| G2 encryption/key protection | Owner decision required by the master prompt | Owner answers the four G2 questions in ADR-0002 |
 | Gemini Kenya eligibility | Official available-regions page timed out twice | Owner tests AI Studio signup, or the page is fetched later |
 | Mistral account verification details | Console returned a transport error; docs confirm the key page but not every signup step | Owner tests signup and records the steps |
 | OpenRouter free allowance without purchase | FAQ and Terms conflict | Owner checks the dashboard/support; default to G4 |
 | Exact free-tier limits | Providers expose these in their consoles | Measure from the account and response headers in M3 |
 | Clean-machine install test | Installer built but not installed; no clean Windows VM used | Install and uninstall on a clean VM at M10/M11 and record evidence |
 | Trusted signing | No free trusted route for a private `UNLICENSED` repo in Kenya; paid routes are G4 | Owner chooses unsigned v1, paid certificate, or open-sourcing |
-| SQLCipher packaging | Not evaluated; G2 design decision | G2 prototype and ADR |
+| Native SQLCipher packaging | Package not installed or packaged; prototype gates in ADR-0002 | G2 approval, then gates 1-8 |
 | UIA implementation | Requires a native adapter and G6 approval | Prototype after the core, then G6 |
 | Voice capture | Deferred until after the core and G6 | Verify Windows speech options, then G6 |
 
 ## Next three tasks
 
-1. Record the M1 commit hash and keep CI execution and clean-machine install as open verification items.
-2. Draft the G2 proposal: encryption approach, key hierarchy, recovery and credential-storage adapter. Stop at G2 for owner approval before writing storage code.
-3. After G2 approval: M2 migrations, encrypted persistence, credential adapter, backup and restore, with tests.
+1. Owner answers G2 on the storage engine, key hierarchy, backup/recovery and prototype rule.
+2. If approved: run the eight prototype gates on Windows with Electron 45 and record the evidence before merging storage code.
+3. Then implement M2 in thin slices: migrations, encrypted persistence across restart, Credential Manager adapter, backup and restore, with tests.
 
 ## Commands that work
 
@@ -96,15 +101,20 @@ npx electron --version
 - Runtime memory was not measured. The main bundle is 743.4 KB because Zod and core are bundled, and source maps are included in the package.
 - The legacy bot was not exercised in this session; its runtime health is unknown and unchanged.
 - Some provider facts remain unverified and are marked in `docs/VERIFICATION_LOG.md` section 6. They must not be presented as confirmed.
+- No encrypted storage, credential adapter, migration, backup or restore code exists yet; ADR-0002 is proposed only.
+- `better-sqlite3-multiple-ciphers` 13.0.3, `@github/keytar` 7.10.6, FTS5, WAL, temp-file encryption and packaged native modules are untested on this machine and Electron 45.
+- The threat model is an initial draft and does not yet cover tools, UIA, voice or update signing in depth.
 
 ## Open questions
 
+- G2: approve SQLCipher-compatible `better-sqlite3-multiple-ciphers`, or choose official SQLCipher Community with a custom addon, or application-level encryption?
+- G2: approve the DPAPI-wrapped random database key and Windows Credential Manager for provider keys, with no plaintext fallback and no escrow?
+- G2: approve passphrase-encrypted portable backups using scrypt and AES-256-GCM, with provider keys excluded and restore rekeying to a fresh local key?
 - Providers: will the owner authorise Gemini or Mistral training-data use (G3), or pay $5 for OpenRouter (G4)? Default remains Groq only.
-- Encryption: SQLCipher, an equivalent, or application-level encryption? This is G2.
 - UIA: is a .NET helper acceptable if Electron's native path is insufficient? This is G6.
 - Kenya data-protection obligations: legal review is outstanding; do not claim compliance.
 - Clean-machine install and uninstall evidence: outstanding until M10/M11.
 
 ## Handover note
 
-Read `docs/MASTER_PROMPT.md` completely, then this file, then the ADR and `docs/MILESTONES/M1.md`. G1 is approved and the M1 scaffold is committed as `bb0815b`; local verification is green. Prepare the G2 proposal and stop for owner approval before writing storage code. The legacy WhatsApp bot is separate and must remain untouched. The M0 documents are committed locally as `34f164a` and `14871e8`; do not push without owner approval. No companion secrets, provider accounts or spending exist. The M1 installer is unsigned and has not been installed.
+Read `docs/MASTER_PROMPT.md` completely, then this file, then `docs/DECISIONS/ADR-0002-storage-encryption.md`, `docs/THREAT_MODEL.md` and `docs/MILESTONES/M1.md`. G1 is approved. The M1 scaffold is committed as `bb0815b`, with the state record at `a35d58d`; local verification is green. G2 is awaiting the owner's answers in ADR-0002. Do not install the native encryption package, create a database or key, store credentials, or write storage code until G2 is approved. The legacy WhatsApp bot is separate and must remain untouched. The M0 documents are committed locally as `34f164a` and `14871e8`; do not push without owner approval. No companion secrets, provider accounts or spending exist. The M1 installer is unsigned and has not been installed.

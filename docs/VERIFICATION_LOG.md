@@ -122,6 +122,9 @@ Status legend:
 | Speech offline behaviour and locale voices | WinRT APIs exist but offline/locale details were not verified | Prototype in the voice milestone after G6 |
 | Trusted code signing for a private individual project | No free trusted route for a closed private repo in Kenya | Owner decides: unsigned v1, pay under G4, or open-source and apply to SignPath |
 | Kenya data-protection obligations | No legal review | Record as open; do not claim compliance (master prompt section 11) |
+| Encrypted SQLite packaging | Proposed package not installed or packaged with Electron 45 | G2 approval, then prototype D-02/D-03/D-06 gates before M2 storage code |
+| Credential Manager adapter on Electron 45 | `@github/keytar` prebuild/ABI not tested | Prototype after G2; fall back to a minimal `CredWriteW` N-API adapter if it fails |
+| Backup and recovery semantics | Passphrase export and no escrow proposed but not approved | Owner decision at G2; tests must prove restore and tamper detection |
 
 ## 7. M1 build and test evidence
 
@@ -138,3 +141,16 @@ All commands below were run from `companion/` on 2026-10-25 unless stated otherw
 | V-06 | `npm ls --depth=0` | Electron 45.0.0, electron-builder 26.18.0, Vite 8.3.5, TypeScript 6.0.3, Vitest 5.0.5, React 19.3.1, Zod 4.6.7, ESLint 10.13.0 |
 
 Not yet verified: installing the NSIS package, first-run behaviour on a clean Windows VM, tray/startup behaviour, E2E automation, and CI execution on GitHub. Those remain open.
+
+## 8. M2 G2 storage and key research
+
+Research only. No encryption package was installed, no database was created, and no key was stored. These rows support the proposed ADR-0002; they do not approve it.
+
+| ID | Evidence | Source | Status |
+| --- | --- | --- | --- |
+| D-01 | SQLCipher Community Edition is BSD-style licensed and requires the copyright, licence and dependency notices in a user-accessible location. SQLCipher Commercial Edition starts at $999 per application per year. Official SQLCipher is a C library, not a maintained Electron/Node binding. | `https://www.zetetic.net/sqlcipher/license/`; `https://www.zetetic.net/sqlcipher/community/`; `https://www.zetetic.net/sqlcipher/commercial/` | VERIFIED |
+| D-02 | SQLite3MultipleCiphers is MIT licensed and implements a SQLCipher-compatible AES-256-CBC cipher as well as its own default sqleet/ChaCha20-Poly1305 scheme. Its docs state that temporary data is stored in memory by default and temp files are encrypted starting with 2.6.0. The package proposed below bundles 2.4.0, so the app must set `PRAGMA temp_store = MEMORY` and the prototype must verify WAL and temp-file behaviour. | `https://github.com/utelle/SQLite3MultipleCiphers`; `https://utelle.github.io/SQLite3MultipleCiphers/docs/ciphers/cipher_sqlcipher/`; `https://utelle.github.io/SQLite3MultipleCiphers/docs/architecture/arch_temp_files/` | VERIFIED |
+| D-03 | `better-sqlite3-multiple-ciphers` 13.0.3 is MIT licensed, uses Node-API, bundles SQLite 3.53.4 and SQLite3MultipleCiphers 2.4.0, and provides prebuilt binaries for Electron 35+ on Windows x64 and arm64. It is a small, single-maintainer fork; prebuilt binaries for all platforms are bundled, so packaging must prune unused binaries and unpack the selected `.node` file from ASAR. It is not the official Zetetic SQLCipher build. | `https://github.com/m4heshd/better-sqlite3-multiple-ciphers/releases/tag/v13.0.3`; `https://www.npmjs.com/package/better-sqlite3-multiple-ciphers` | VERIFIED |
+| D-04 | Electron `safeStorage` uses DPAPI on Windows. The synchronous methods are deprecated in Electron 45 and removed in Electron 46; the asynchronous `isAsyncEncryptionAvailable`, `encryptStringAsync` and `decryptStringAsync` methods must be used. `decryptStringAsync` returns `{ result, shouldReEncrypt }`. DPAPI protects against other users and casual offline disk access, but not against other applications running as the same user or an offline attacker who can recover the Windows account password. | `https://www.electronjs.org/docs/latest/api/safe-storage`; `https://github.com/electron/electron/blob/main/docs/breaking-changes.md` | VERIFIED |
+| D-05 | Windows Credential Manager generic credentials are scoped to the logged-on user and are suitable for API keys, not bulk data. `@github/keytar` 7.10.6 is an MIT-licensed maintained fork of the archived `atom/node-keytar` and uses Credential Vault on Windows. Its Electron 45 prebuild/ABI support and electron-builder packaging were not tested. | `https://www.npmjs.com/package/@github/keytar`; W-07 | PARTIAL |
+| D-06 | SQLite FTS5 availability in the proposed native package, encrypted WAL behaviour, `VACUUM INTO`/backup behaviour, and recovery from a wrong key are not verified. They are prototype gates, not assumptions. | Analysis | UNVERIFIED |

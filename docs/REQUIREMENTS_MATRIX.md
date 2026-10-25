@@ -4,7 +4,7 @@ Last updated: 2026-10-25
 Source of truth: `docs/MASTER_PROMPT.md`
 Status vocabulary is fixed by master prompt section 16. A requirement is never marked `IMPLEMENTED AND TESTED` without a recorded passing run. For `NOT IMPLEMENTED` rows, the evidence is the absence of companion code plus `docs/PROJECT_STATE.md`; the milestone column shows where the requirement is expected to land.
 
-Current position: M1 scaffold is implemented and locally verified; the commit is pending. G1 approved Electron + TypeScript, the Windows 11 25H2/26H2 x64 baseline, the isolated `companion/` layout and an unsigned v1 with SHA256.
+Current position: M1 scaffold committed locally as `bb0815b` with state record `a35d58d`; local verification green. The G2 proposal is drafted in `docs/DECISIONS/ADR-0002-storage-encryption.md` and awaits owner approval; no storage code exists. GitHub CI and clean-machine install remain open.
 
 ## M0 and project governance
 
@@ -27,15 +27,28 @@ Current position: M1 scaffold is implemented and locally verified; the commit is
 | M1-04 | Lint, typecheck, test harness and production build | M1 | IMPLEMENTED AND TESTED | `npm run verify` passed: ESLint, tsc, 2 files / 9 tests, build |
 | M1-05 | Logging with secret redaction | M1 | IMPLEMENTED AND TESTED | `packages/core/src/logger.ts`; 3 logger tests pass; key-name redaction only |
 | M1-06 | Versioned config schema | M1 | IMPLEMENTED AND TESTED | `packages/core/src/config.ts`; 5 config tests pass |
-| M1-07 | Installer generation and footprint measurement | M1 | IMPLEMENTED BUT NOT FULLY VERIFIED | Unsigned NSIS built: 115.9 MiB installer, 359.1 MiB unpacked; not installed |
+| M1-07 | Installer generation and footprint measurement | M1 | IMPLEMENTED BUT NOT FULLY VERIFIED | Unsigned NSIS built: 115.9 MiB installer, 359.1 MiB unpacked, SHA256 `CEE02741491F0BF7253E05879BC85E49FE2BBAED228FCC76A9228EC451165CDB`; Authenticode `NotSigned`; not installed |
 | M1-08 | M1 milestone report | M1 | IMPLEMENTED BUT NOT FULLY VERIFIED | `docs/MILESTONES/M1.md`; committed in `bb0815b` |
+
+## M2 storage and secrets
+
+| ID | Requirement | Milestone | Status | Evidence / note |
+| --- | --- | --- | --- | --- |
+| M2-01 | Encrypted local database for companion data | M2 | NOT IMPLEMENTED | ADR-0002 proposes SQLCipher-compatible `better-sqlite3-multiple-ciphers`; G2 pending |
+| M2-02 | Versioned migrations with up/down paths | M2 | NOT IMPLEMENTED | ADR-0002 proposes `schema_migrations`, checksums and pre-migration snapshots; no schema |
+| M2-03 | Encrypted persistence across restart proven by test | M2 | NOT IMPLEMENTED | No storage code or test |
+| M2-04 | Credential storage adapter for provider keys, with no plaintext fallback | M2 | NOT IMPLEMENTED | ADR-0002 proposes Windows Credential Manager via `@github/keytar` or a minimal native adapter; G2 pending |
+| M2-05 | Backup and restore, including portable owner-controlled recovery | M2 | NOT IMPLEMENTED | ADR-0002 proposes local snapshots and scrypt/AES-256-GCM passphrase exports; not implemented |
+| M2-06 | Separate stores or clearly separated tables for conversations, memories, credentials, config and audit | M2 | NOT IMPLEMENTED | ADR-0002 proposes separate tables and Credential Manager for provider keys; no schema |
+| M2-07 | No key material in database, config, logs, exports or tests; automated check | M2 | NOT IMPLEMENTED | No key or storage code; scan test not written |
+| M2-08 | Storage prototype gates pass before implementation | M2 | NOT IMPLEMENTED | Eight gates are defined in ADR-0002; none executed |
 
 
 ## Product scope
 
 | ID | Requirement | Milestone | Status | Evidence / note |
 | --- | --- | --- | --- | --- |
-| PRD-01 | Windows-only v1; x64 first, ARM64 as a goal | M1/M10 | NOT IMPLEMENTED | No companion build; ADR recommends x64 first |
+| PRD-01 | Windows-only v1; x64 first, ARM64 as a goal | M1/M10 | PARTIALLY IMPLEMENTED | Electron scaffold and Windows x64 NSIS installer exist; ARM64 and installed v1 behaviour are unverified |
 | PRD-02 | Resumable setup wizard including provider setup | M5 | NOT IMPLEMENTED | No code |
 | PRD-03 | Hosted free-tier AI gateway with automatic switching | M3 | NOT IMPLEMENTED | No code |
 | PRD-04 | Local encrypted memory | M2/M6 | NOT IMPLEMENTED | No code; encryption is G2 |
@@ -44,7 +57,7 @@ Current position: M1 scaffold is implemented and locally verified; the commit is
 | PRD-07 | Background agent with tray, optional startup and bounded reflection loop | M8 | NOT IMPLEMENTED | No code |
 | PRD-08 | Privacy center with export and delete | M9 | NOT IMPLEMENTED | No code |
 | PRD-09 | GitHub-based install | M10 | NOT IMPLEMENTED | No code or release |
-| PRD-10 | Automated tests and end-to-end acceptance suite | M1-M11 | NOT IMPLEMENTED | No test harness |
+| PRD-10 | Automated tests and end-to-end acceptance suite | M1-M11 | PARTIALLY IMPLEMENTED | Vitest harness with 2 files / 9 tests for config and logger; no E2E or acceptance suite |
 | PRD-11 | Push-to-talk voice after the core, once Windows speech options are verified | M11+ | NOT IMPLEMENTED | Voice is deferred and gated by G6 |
 | PRD-12 | No local language model; all reasoning through hosted free tiers; memory, tools, permissions and storage local | M1-M11 | NOT IMPLEMENTED | Architectural constraint; no code yet |
 | PRD-13 | No paid cloud backend, no multi-device sync, no always-listening wake word, no covert recording | M1-M11 | NOT IMPLEMENTED | Non-goal enforcement begins with the scaffold |
@@ -56,8 +69,8 @@ Current position: M1 scaffold is implemented and locally verified; the commit is
 | ARC-01 | A local agent process owns memory, gateway, tools, permissions and scheduler; the UI talks to it over an authenticated local channel | M1 | PARTIALLY IMPLEMENTED | Electron main + validated IPC with a per-window token exist; memory, gateway, tools and scheduler do not |
 | ARC-02 | Core domain logic is isolated behind typed contracts so Android v2 can reuse it | M1 | PARTIALLY IMPLEMENTED | `packages/core` exists with config, logger and provider contracts; domain modules are not implemented |
 | ARC-03 | Stable modules: shell, onboarding, profile, conversation, memory/retrieval, personalization, gateway, tool registry, permission engine, Windows adapters, workflow executor, scheduler, notifications, security/encryption, observability, import/export/backup, update management | M1-M10 | PARTIALLY IMPLEMENTED | Shell, core package, config and logger exist; most modules are absent |
-| ARC-04 | SQLite with encryption evaluated (SQLCipher or equivalent), FTS5 lexical search and versioned migrations from day one | M2 | NOT IMPLEMENTED | G2 decision; no schema yet |
-| ARC-05 | Conversations, memories, credentials, configuration and audit records live in separate stores or clearly separated tables | M2 | NOT IMPLEMENTED | No schema |
+| ARC-04 | SQLite with encryption evaluated (SQLCipher or equivalent), FTS5 lexical search and versioned migrations from day one | M2 | NOT IMPLEMENTED | ADR-0002 proposes SQLCipher-compatible storage, FTS5 in the same encrypted database and versioned migrations; G2 pending |
+| ARC-05 | Conversations, memories, credentials, configuration and audit records live in separate stores or clearly separated tables | M2 | NOT IMPLEMENTED | ADR-0002 proposes separate tables and Windows Credential Manager for provider keys; no schema |
 | ARC-06 | Retrieval combines lexical search, metadata, recency, relevance and access checks; embeddings only if a measured benefit justifies a hosted provider | M6 | NOT IMPLEMENTED | No retrieval |
 | ARC-07 | No Kubernetes, queues, microservices or hosted backend | M1-M11 | NOT IMPLEMENTED | Constraint; no infrastructure chosen |
 | ARC-08 | Stack ADR covers installer size, tray/background, UIA, credential storage, installer generation, build/test tooling, solo maintainability, ARM64 | M0 | IMPLEMENTED BUT NOT FULLY VERIFIED | `ADR-0001-stack.md`; accepted at G1 |
@@ -136,18 +149,18 @@ Current position: M1 scaffold is implemented and locally verified; the commit is
 | WIZ-06 | Validate with a tiny request and show a specific result: connected, invalid key, phone verification, region unavailable, rate-limited | M5 | NOT IMPLEMENTED | No code |
 | WIZ-07 | Reliability status shows connected provider count and prompts for one more; user can skip into memory-and-notes mode | M5 | NOT IMPLEMENTED | No code |
 | WIZ-08 | Settings > Providers lists status, tests, and adds/replaces/removes keys | M5 | NOT IMPLEMENTED | No code |
-| WIZ-09 | Keys only in Windows credential storage, masked, never shown after saving, never in memory DB, config, logs, exports, backups or crash reports; prefix hints are warnings only | M2/M5 | NOT IMPLEMENTED | G2 design pending |
+| WIZ-09 | Keys only in Windows credential storage, masked, never shown after saving, never in memory DB, config, logs, exports, backups or crash reports; prefix hints are warnings only | M2/M5 | NOT IMPLEMENTED | ADR-0002 proposes Credential Manager-only storage and exclusion from backups; G2 pending |
 
 ## Security and privacy
 
 | ID | Requirement | Milestone | Status | Evidence / note |
 | --- | --- | --- | --- | --- |
-| SEC-01 | `docs/THREAT_MODEL.md` covers malicious files/pages, prompt injection, hallucinated tool use, unauthorised execution, excessive permissions, malware, credential theft, provider leakage, device loss, backup exposure, key compromise, dependency updates, unintended recording, memory poisoning, accidental deletion and provider outages | M1/M11 | NOT IMPLEMENTED | Document not written |
-| SEC-02 | Least privilege, safe defaults, encrypted secrets and data at rest, input validation, dependency scanning and logs without keys or private content | M1-M11 | NOT IMPLEMENTED | No code |
+| SEC-01 | `docs/THREAT_MODEL.md` covers malicious files/pages, prompt injection, hallucinated tool use, unauthorised execution, excessive permissions, malware, credential theft, provider leakage, device loss, backup exposure, key compromise, dependency updates, unintended recording, memory poisoning, accidental deletion and provider outages | M1/M11 | IMPLEMENTED BUT NOT FULLY VERIFIED | Initial `docs/THREAT_MODEL.md` covers all listed categories; M11 review and tool/voice/UIA detail pending |
+| SEC-02 | Least privilege, safe defaults, encrypted secrets and data at rest, input validation, dependency scanning and logs without keys or private content | M1-M11 | PARTIALLY IMPLEMENTED | Sandbox, context isolation, CSP and authenticated IPC exist; encryption, dependency scanning and full validation are absent |
 | SEC-03 | Privacy center shows active permissions, providers and what each receives, selected folders, stored memories, retention, recent tool actions, pending confirmations, backup status and export/delete controls | M9 | NOT IMPLEMENTED | No code |
 | SEC-04 | Export all data and delete it, including keys, with verification that nothing remains | M9 | NOT IMPLEMENTED | No code |
 | SEC-05 | Evaluate data-protection requirements for target jurisdictions including Kenya; never claim compliance without legal review | M11 | NOT IMPLEMENTED | Open legal question |
-| SEC-06 | No secrets in repo, logs, tests, fixtures or screenshots; app never ships with API keys | M1-M11 | NOT IMPLEMENTED | No app yet; legacy `.env` is ignored and must remain unread |
+| SEC-06 | No secrets in repo, logs, tests, fixtures or screenshots; app never ships with API keys | M1-M11 | PARTIALLY IMPLEMENTED | M1 contains no secrets and `.gitignore` covers local artifacts; logger covers key names only; no secret-scanning test |
 | SEC-07 | No hidden persistence or control bypass; provide Pause, Stop, Exit, Disable Startup and Uninstall | M8/M10 | NOT IMPLEMENTED | No code |
 | SEC-08 | Honest product claims: not sentient, not infallible, not able to control everything | M4+ | NOT IMPLEMENTED | No UI copy yet |
 
@@ -168,7 +181,7 @@ Current position: M1 scaffold is implemented and locally verified; the commit is
 
 | ID | Requirement | Milestone | Status | Evidence / note |
 | --- | --- | --- | --- | --- |
-| TEST-01 | Unit tests | M1-M11 | NOT IMPLEMENTED | No harness |
+| TEST-01 | Unit tests | M1-M11 | PARTIALLY IMPLEMENTED | Vitest harness and 2 files / 9 tests for config and logger pass; most modules are absent or untested |
 | TEST-02 | Migration up and rollback tests | M2 | NOT IMPLEMENTED | No schema |
 | TEST-03 | Encryption and recovery tests | M2 | NOT IMPLEMENTED | G2 pending |
 | TEST-04 | Memory create, retrieve, correct and delete tests | M6 | NOT IMPLEMENTED | No code |
