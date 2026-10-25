@@ -116,15 +116,15 @@ Status legend:
 | Mistral phone/account verification | Quickstart says no card, but account verification details vary | Owner tests signup; record the exact steps in the provider guide |
 | OpenRouter free allowance without purchase | FAQ and Terms conflict | Owner checks the OpenRouter dashboard or support before relying on it; default to G4 |
 | Exact free-tier limits for Gemini and Mistral | Provider publishes them only in the console | Measure from the account's console and response headers; never hard-code |
-| Windows install footprint | No build exists yet | Measure in M1 and M10; record installer and installed sizes |
-| Framework-specific credential storage | Depends on G1 stack | Prototype Credential Manager and DPAPI access in M1/M2 (G2) |
+| Windows install footprint | M2 package is measured but not installed on a clean machine | Install and uninstall on a clean Windows VM at M10/M11; record installed size and first-run behaviour |
+| Framework-specific credential storage | G2 prototype passed with DPAPI and keytar under Electron 45 | Implement the production adapter in M2 and keep the native fallback documented |
 | Framework-specific UIA | Depends on G1 stack and G6 | Prototype a read-only UIA call against an allow-listed app before promising automation |
 | Speech offline behaviour and locale voices | WinRT APIs exist but offline/locale details were not verified | Prototype in the voice milestone after G6 |
 | Trusted code signing for a private individual project | No free trusted route for a closed private repo in Kenya | Owner decides: unsigned v1, pay under G4, or open-source and apply to SignPath |
 | Kenya data-protection obligations | No legal review | Record as open; do not claim compliance (master prompt section 11) |
-| Encrypted SQLite packaging | Proposed package not installed or packaged with Electron 45 | G2 approval, then prototype D-02/D-03/D-06 gates before M2 storage code |
-| Credential Manager adapter on Electron 45 | `@github/keytar` prebuild/ABI not tested | Prototype after G2; fall back to a minimal `CredWriteW` N-API adapter if it fails |
-| Backup and recovery semantics | Passphrase export and no escrow proposed but not approved | Owner decision at G2; tests must prove restore and tamper detection |
+| Encrypted SQLite packaging | Eight G2 prototype gates passed; production storage code is still absent | Implement M2 encrypted persistence and retain the gate evidence in section 9 |
+| Credential Manager adapter on Electron 45 | G2 prototype passed; production adapter is not written | Implement the adapter and its tests in M2 |
+| Backup and recovery semantics | Prototype passed with `VACUUM INTO`, restore, rekey and tamper rejection; production flow is not written | Implement the owner-confirmed M2 backup/restore flow and tests |
 
 ## 7. M1 build and test evidence
 
@@ -144,15 +144,77 @@ Not yet verified: installing the NSIS package, first-run behaviour on a clean Wi
 
 ## 8. M2 G2 storage and key research
 
-Research only. No encryption package was installed, no database was created, and no key was stored. These rows support the accepted ADR-0002; they do not by themselves prove the design works.
+Research and prototype evidence. The approved packages were installed on 2026-10-25 and the eight gates were run on Windows with Electron 45 and Node 22. The G2 approval and the gate evidence are recorded below and in section 9; production storage code has not been written.
 
-G2 was approved by the owner on 2026-10-25 for all four questions: the proposed SQLCipher-compatible package, the DPAPI-wrapped random database key with Windows Credential Manager provider keys and no escrow, passphrase backups, and the eight prototype gates. Gate evidence belongs in section 9 and must be recorded before production storage code.
+G2 was approved by the owner on 2026-10-25 for all four questions: the proposed SQLCipher-compatible package, the DPAPI-wrapped random database key with Windows Credential Manager provider keys and no escrow, passphrase backups, and the eight prototype gates. The gate evidence is recorded in section 9.
 
 | ID | Evidence | Source | Status |
 | --- | --- | --- | --- |
 | D-01 | SQLCipher Community Edition is BSD-style licensed and requires the copyright, licence and dependency notices in a user-accessible location. SQLCipher Commercial Edition starts at $999 per application per year. Official SQLCipher is a C library, not a maintained Electron/Node binding. | `https://www.zetetic.net/sqlcipher/license/`; `https://www.zetetic.net/sqlcipher/community/`; `https://www.zetetic.net/sqlcipher/commercial/` | VERIFIED |
-| D-02 | SQLite3MultipleCiphers is MIT licensed and implements a SQLCipher-compatible AES-256-CBC cipher as well as its own default sqleet/ChaCha20-Poly1305 scheme. Its docs state that temporary data is stored in memory by default and temp files are encrypted starting with 2.6.0. The package proposed below bundles 2.4.0, so the app must set `PRAGMA temp_store = MEMORY` and the prototype must verify WAL and temp-file behaviour. | `https://github.com/utelle/SQLite3MultipleCiphers`; `https://utelle.github.io/SQLite3MultipleCiphers/docs/ciphers/cipher_sqlcipher/`; `https://utelle.github.io/SQLite3MultipleCiphers/docs/architecture/arch_temp_files/` | VERIFIED |
+| D-02 | SQLite3MultipleCiphers is MIT licensed and implements a SQLCipher-compatible AES-256-CBC cipher as well as its own default sqleet/ChaCha20-Poly1305 scheme. Its docs state that temporary data is stored in memory by default and temp files are encrypted starting with 2.6.0. The package bundles 2.4.0, so the app sets `PRAGMA temp_store = MEMORY`; the prototype confirmed `temp_store = 2` and no temp files after a 20,000-row sort. | `https://github.com/utelle/SQLite3MultipleCiphers`; `https://utelle.github.io/SQLite3MultipleCiphers/docs/ciphers/cipher_sqlcipher/`; `https://utelle.github.io/SQLite3MultipleCiphers/docs/architecture/arch_temp_files/`; section 9 | VERIFIED |
 | D-03 | `better-sqlite3-multiple-ciphers` 13.0.3 is MIT licensed, uses Node-API, bundles SQLite 3.53.4 and SQLite3MultipleCiphers 2.4.0, and provides prebuilt binaries for Electron 35+ on Windows x64 and arm64. It is a small, single-maintainer fork; prebuilt binaries for all platforms are bundled, so packaging must prune unused binaries and unpack the selected `.node` file from ASAR. It is not the official Zetetic SQLCipher build. | `https://github.com/m4heshd/better-sqlite3-multiple-ciphers/releases/tag/v13.0.3`; `https://www.npmjs.com/package/better-sqlite3-multiple-ciphers` | VERIFIED |
-| D-04 | Electron `safeStorage` uses DPAPI on Windows. The synchronous methods are deprecated in Electron 45 and removed in Electron 46; the asynchronous `isAsyncEncryptionAvailable`, `encryptStringAsync` and `decryptStringAsync` methods must be used. `decryptStringAsync` returns `{ result, shouldReEncrypt }`. DPAPI protects against other users and casual offline disk access, but not against other applications running as the same user or an offline attacker who can recover the Windows account password. | `https://www.electronjs.org/docs/latest/api/safe-storage`; `https://github.com/electron/electron/blob/main/docs/breaking-changes.md` | VERIFIED |
-| D-05 | Windows Credential Manager generic credentials are scoped to the logged-on user and are suitable for API keys, not bulk data. `@github/keytar` 7.10.6 is an MIT-licensed maintained fork of the archived `atom/node-keytar` and uses Credential Vault on Windows. Its Electron 45 prebuild/ABI support and electron-builder packaging were not tested. | `https://www.npmjs.com/package/@github/keytar`; W-07 | PARTIAL |
-| D-06 | SQLite FTS5 availability in the proposed native package, encrypted WAL behaviour, `VACUUM INTO`/backup behaviour, and recovery from a wrong key are not verified. They are prototype gates, not assumptions. | Analysis | UNVERIFIED |
+| D-04 | Electron `safeStorage` uses DPAPI on Windows. The synchronous methods are deprecated in Electron 45 and removed in Electron 46; the asynchronous `isAsyncEncryptionAvailable`, `encryptStringAsync` and `decryptStringAsync` methods must be used. `decryptStringAsync` returns `{ result, shouldReEncrypt }`. DPAPI protects against other users and casual offline disk access, but not against other applications running as the same user or an offline attacker who can recover the Windows account password. Prototype: async encryption was available; a 74-byte wrapped key was unwrapped by a sequential second Electron 45 process with `shouldReEncrypt = false`. | `https://www.electronjs.org/docs/latest/api/safe-storage`; `https://github.com/electron/electron/blob/main/docs/breaking-changes.md`; section 9 | VERIFIED |
+| D-05 | Windows Credential Manager generic credentials are scoped to the logged-on user and are suitable for API keys, not bulk data. `@github/keytar` 7.10.6 is an MIT-licensed maintained fork of the archived `atom/node-keytar` and uses Credential Vault on Windows. Its Electron 45 prebuild/ABI and electron-builder packaging were tested: set, read, list and delete passed, including a packaged credential round trip. | `https://www.npmjs.com/package/@github/keytar`; W-07; section 9 | VERIFIED |
+| D-06 | The prototype verified FTS5 in the encrypted database, encrypted WAL with `temp_store = MEMORY`, `VACUUM INTO` snapshots, wrong-key rejection, portable export/restore/rekey, passphrase and ciphertext tamper rejection, failed-migration rollback, page size 4096, and a raw key scan. `better-sqlite3`'s `backup()` API is incompatible with an encrypted source and target in 13.0.3; `VACUUM INTO` is the tested snapshot path. | Local prototype evidence, section 9 | VERIFIED |
+
+## 9. M2 G2 prototype gate evidence
+
+All eight gates passed on 2026-10-25. Environment: Windows, Electron 45.0.0, Node 22.23.4 for the Node gate, packaged Node 24.22.0, SQLite 3.53.4, `better-sqlite3-multiple-ciphers` 13.0.3 and `@github/keytar` 7.10.6. Probes were run outside the repository under `%TEMP%\opencode\g2-proto`. The temporary packaged probe was removed from the production main process after the evidence was captured; the dependency and packaging configuration remains.
+
+| ID | Gate | Evidence | Result |
+| --- | --- | --- | --- |
+| G2-01 | Native module loads in Node 22 and Electron 45 | `npx -y node@22 probe.cjs` loaded the package and encrypted database; the packaged Electron main process loaded the same package and opened the database | PASS |
+| G2-02 | Encryption at rest, wrong key and restart | Node 22 output: `cipher: sqlcipher`, `legacy: 0`, `kdfIter: 256000`, `pageSize: 4096`, `journalMode: wal`, `tempStore: 2`, `foreignKeys: 1`, `wrongKeyRejected: true`, `processRestartVerified: true`; DB 28,672 bytes, WAL 53,592 bytes; marker absent from both | PASS |
+| G2-03 | FTS5 on the encrypted database | `fts5: true`; the probe created `notes_fts` and matched a row after reopening | PASS |
+| G2-04 | WAL, temp, backup, export and restore | `VACUUM INTO` produced a 28,672-byte encrypted backup that reopened; portable export was 28,945 bytes; `exportVerified`, `restoreRekeyVerified`, `wrongPassphraseRejected` and `tamperRejected` were true; a 20,000-row sort under `temp_store = MEMORY` left `tempFilesAfterSort: 0`. `db.backup()` failed with `backup is not supported with incompatible source and target databases`; `sqlcipher_export` was absent; `serialize` failed | PASS with `VACUUM INTO` replacing the backup API |
+| G2-05 | electron-builder native packaging | `npx electron-builder --win dir --x64` and `npm run package` succeeded; the only `.node` files in `app.asar.unpacked` were `@github/keytar/prebuilds/win32-x64/keytar.node` (162,816 bytes) and `better-sqlite3-multiple-ciphers/prebuilds/win32-x64.node` (2,365,952 bytes); no unused platform binaries | PASS |
+| G2-06 | Credential Manager through keytar | `@github/keytar` set, read, listed and deleted a disposable generic credential under Electron 45; the packaged probe also passed the Credential Manager round trip | PASS |
+| G2-07 | Key-material scan and DPAPI wrapping | `rawKeyAbsentFromAllFiles: true`; the unwrapped key was absent from every probe file and from the database, WAL, backup and portable export; the 74-byte key file was DPAPI-wrapped and opened by a sequential second Electron process | PASS |
+| G2-08 | Restart and failed migration | A second Node process reopened the encrypted database; a simulated migration transaction rolled back, the migration table was absent, and the original data reopened (`failedMigrationRollbackVerified: true`) | PASS |
+| G2-09 | Packaged probe | Temporary packaged probe with `COMPANION_STORAGE_PROBE=1` returned exit 0 and `{ "ok": true, "gate": "packaged-storage-probe", "electron": "45.0.0", "node": "24.22.0", "sqlite": "3.53.4", "dbBytes": 28672, "walBytes": 53592, "backupBytes": 28672, "fts5": true, "credentialManager": true, "plaintextAbsent": true }` | PASS |
+| G2-10 | Final build and launch | `npm run verify` passed after probe removal: ESLint clean, `tsc` clean, 2 files / 9 tests, main bundle 743.4 KB. Final unsigned NSIS installer: 122,573,738 bytes (116.9 MiB), SHA256 `F24B0C22EA23E24ED8ACD0653FA31666D71BF6F357EE48FC9601BF5383E5D577`, `NotSigned`; unpacked app 379,071,247 bytes across 103 files; a normal packaged launch produced 4 responding processes and left none running | PASS |
+
+The Node 22 output was:
+
+```json
+{
+  "gate": "node-storage",
+  "observed": {
+    "cipher": "sqlcipher",
+    "legacy": "0",
+    "kdfIter": "256000",
+    "pageSize": 4096,
+    "journalMode": "wal",
+    "tempStore": 2,
+    "foreignKeys": 1
+  },
+  "dbBytes": 28672,
+  "openWalBytes": 53592,
+  "backupBytes": 28672,
+  "exportBytes": 28945,
+  "tempFilesAfterSort": 0,
+  "fts5": true,
+  "wrongKeyRejected": true,
+  "processRestartVerified": true,
+  "failedMigrationRollbackVerified": true,
+  "backupVerified": true,
+  "exportVerified": true,
+  "tamperRejected": true,
+  "wrongPassphraseRejected": true,
+  "restoreRekeyVerified": true,
+  "plaintextMarkerAbsent": true,
+  "sqliteHeaderAbsent": true,
+  "rawKeyAbsentFromAllFiles": true
+}
+```
+
+The Electron keytar and restart probe produced:
+
+```json
+{"gate":"electron-safeStorage-keytar","asyncAvailable":true,"wrappedKeyLength":74,"keytarSetGetListDeleteVerified":true,"processRestartVerified":false}
+{"gate":"electron-safeStorage-restart","asyncAvailable":true,"processRestartVerified":true,"wrappedKeyLength":74,"shouldReEncrypt":false}
+```
+
+The first line is the create-and-keytar pass; `processRestartVerified` is false there by design because the restart check runs in a sequential second process. A concurrent second child was invalid because it shared the same Electron userData and GPU cache, so it is not counted as a failure.
+
+Remaining verification limits: the 4096-byte page size is recorded but production code must pin it, the installer has not been installed on a clean machine, CI has not run on GitHub, and no production storage, migration, credential, backup or restore code exists yet.

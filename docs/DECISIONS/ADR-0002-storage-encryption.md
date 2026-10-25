@@ -1,10 +1,10 @@
 # ADR-0002: Encrypted storage and key protection
 
-- Status: Accepted at G2 on 2026-10-25
+- Status: Accepted at G2 on 2026-10-25; eight prototype gates passed on 2026-10-25
 - Date: 2026-10-25
 - Deciders: owner (approved 2026-10-25)
 - Author: implementation agent
-- Related: `docs/MASTER_PROMPT.md` sections 5, 11, 13 and 14; `docs/DECISIONS/ADR-0001-stack.md`; `docs/VERIFICATION_LOG.md` D-01 to D-06
+- Related: `docs/MASTER_PROMPT.md` sections 5, 11, 13 and 14; `docs/DECISIONS/ADR-0001-stack.md`; `docs/VERIFICATION_LOG.md` D-01 to D-06 and section 9
 
 ## Context
 
@@ -12,7 +12,7 @@ M2 must deliver versioned migrations, an encrypted database, a credential-storag
 
 The companion is a single-user Windows application. It is not a server and has no multi-user recovery service. The threat model must distinguish offline disk theft, another Windows user, and malware running as the same user. DPAPI and Windows Credential Manager protect against other users and raise the bar for casual offline disk access, but not against an offline attacker who can recover the Windows account password, and not against malware running as the same user.
 
-This ADR defines a concrete design. The native packages have not been installed, no database or key has been created, and the prototype gates at the end have not run. No paid SQLCipher licence, certificate, or service is proposed.
+This ADR defines a concrete design. The approved packages were installed, and the eight prototype gates passed on Windows with Electron 45 and Node 22 on 2026-10-25; evidence is in `docs/VERIFICATION_LOG.md` section 9. Production storage code has not been written. No paid SQLCipher licence, certificate, or service is proposed.
 
 ## Decision
 
@@ -56,7 +56,7 @@ backups/                   local encrypted snapshots and portable exports
 Provider API keys are separate from the database key and are stored only in Windows Credential Manager generic credentials:
 
 - First choice: `@github/keytar` 7.10.6, the maintained MIT fork of the archived `atom/node-keytar` (D-05). It uses Credential Vault on Windows.
-- If its Electron 45 ABI or packaging fails the prototype, implement the same adapter directly against `CredWriteW`, `CredReadW`, `CredDeleteW`, and `CredEnumerateW` through a small Node-API addon. This is an implementation fallback, not a change to the G2 design.
+- If a future Electron upgrade breaks its ABI or packaging, implement the same adapter directly against `CredWriteW`, `CredReadW`, `CredDeleteW`, and `CredEnumerateW` through a small Node-API addon. This is an implementation fallback, not a change to the G2 design.
 - Use service `Companion` and account `provider/<providerId>`. Never put a provider key in SQLite, JSON config, logs, exports, backups, crash reports, or test fixtures.
 - The adapter exposes `get`, `set`, `delete`, and `list` by provider id. Missing credentials return a typed `credential_not_found`; a broken Credential Manager returns `credential_unavailable`. There is no plaintext fallback.
 - Provider keys are never exported. After a restore, the owner re-enters them. Deleting a provider or all data must delete the matching Credential Manager entries and verify that a read now fails.
@@ -67,7 +67,7 @@ Provider API keys are separate from the database key and are stored only in Wind
 - A `schema_migrations` table records version, name, checksum, and application timestamp. `PRAGMA user_version` mirrors the latest version for a fast sanity check.
 - Migration files are bundled, ordered, and run inside `BEGIN IMMEDIATE` transactions. A migration that fails rolls back and leaves the prior version intact.
 - Every migration has an up path and a down path where SQLite allows it. Tests must apply all migrations to an empty database and roll back a migration in a disposable copy.
-- Before a production migration, create a local encrypted snapshot with the SQLite backup API. If the snapshot or migration fails, stop and leave the original database untouched.
+- Before a production migration, create a local encrypted snapshot with `VACUUM INTO`. If the snapshot or migration fails, stop and leave the original database untouched.
 - Initial tables are expected to include `schema_migrations`, `settings`, `conversations`, `messages`, `memories`, and `audit_log`. Provider keys are not in any table. The M6 and M7 schemas extend this set behind versioned migrations rather than editing the initial migration in place.
 - Audit rows are append-only through the application API. A database owner can still edit a file on disk; the privacy centre and future tamper evidence are separate controls.
 
@@ -80,7 +80,7 @@ Two different things are needed:
 
 The portable export design is:
 
-- Make a consistent snapshot with better-sqlite3's backup API.
+- Make a consistent snapshot with `VACUUM INTO`. The package's `backup()` API rejects an encrypted source and target in 13.0.3, so `VACUUM INTO` is the tested snapshot path; see the prototype results below.
 - Build a payload containing the encrypted database snapshot, its database key, and a versioned manifest. The database key is inside the encrypted envelope because a new machine has no DPAPI key for this app.
 - Derive an export key from the passphrase with Node's built-in `crypto.scrypt` using N=2^17, r=8, p=1, a random 16-byte salt, a 32-byte output, and `maxmem` large enough for the parameters. Encrypt with AES-256-GCM using a random 12-byte nonce. Authenticate the header and payload; reject tampering.
 - Exclude provider keys, logs, and crash data. The manifest records the schema version, database cipher parameters, KDF parameters, salt, nonce, and creation time.
@@ -122,7 +122,8 @@ Positive:
 Negative:
 
 - Native modules add build and packaging work, especially pruning prebuilt binaries and unpacking the `.node` file from ASAR.
-- `@github/keytar` needs an Electron 45 ABI/packaging prototype; a custom N-API adapter is the fallback.
+- `better-sqlite3-multiple-ciphers` 13.0.3 rejects `backup()` when the source and target are encrypted; local snapshots use `VACUUM INTO` and must be retested on package upgrades.
+- `@github/keytar` passed its Electron 45 ABI and packaging prototype; retest it on Electron upgrades, with a custom N-API adapter as the fallback.
 - DPAPI and Credential Manager do not protect against malware or an attacker running as the same user, and DPAPI is not a guarantee against an offline attacker who can recover the Windows account password. BitLocker and OS hardening remain recommendations, not guarantees.
 - Losing the Windows profile without a portable export loses the data. The UI must make this clear.
 - JavaScript cannot guarantee memory zeroization; key material may remain in process memory until garbage collection.
@@ -131,18 +132,32 @@ Negative:
 
 ## Prototype gates before M2 implementation
 
-The following must be proven on Windows with Electron 45 before storage code is merged:
+The following had to be proven on Windows with Electron 45 before storage code could be merged:
 
 1. `better-sqlite3-multiple-ciphers` 13.0.3 loads in the Electron main process and in Node 22 tests.
 2. A database created with `PRAGMA cipher='sqlcipher'` and a random key reopens after restart; a wrong key fails; raw file bytes and WAL do not contain a known plaintext marker.
 3. FTS5 can be created and queried on the encrypted database.
-4. WAL, `temp_store=MEMORY`, backup, `VACUUM INTO` if used, and portable export/restore behaviour are measured and recorded.
+4. WAL, `temp_store=MEMORY`, `VACUUM INTO` snapshots, and portable export/restore behaviour are measured and recorded.
 5. electron-builder packages the correct Windows x64 `.node` binary, unpacks it from ASAR, and excludes unused platform binaries; the packaged app opens the database.
 6. `@github/keytar` 7.10.6 can write, read, list, and delete a disposable generic credential under Electron 45; if not, the minimal `CredWriteW` adapter is prototyped.
 7. The unwrapped database key is never present in logs, config, exports outside the encrypted envelope, or a raw string search of the data directory; the database key file is DPAPI-wrapped.
 8. A test proves encrypted persistence across a process restart and a test proves a failed migration leaves the original database openable.
 
 If any gate fails, stop and record the evidence. Do not silently switch to plaintext, a commercial licence, or a paid service.
+
+## Prototype results (2026-10-25)
+
+All eight gates passed on Windows with Electron 45.0.0 and Node 22.23.4; full evidence is in `docs/VERIFICATION_LOG.md` section 9. The headline results were:
+
+- `better-sqlite3-multiple-ciphers` 13.0.3 loaded in Node 22 and in the packaged Electron main process. The database reported `cipher = sqlcipher`, `legacy = 0`, `kdf_iter = 256000`, `page_size = 4096`, `journal_mode = wal`, `temp_store = 2`, and `foreign_keys = 1`.
+- FTS5 worked in the encrypted database. A wrong key was rejected. A marker remained absent from the database, WAL, backup, and portable export. A raw scan of every probe file found none of the unwrapped key text, and a 20,000-row sort left no files in an isolated SQLite temp directory.
+- `db.backup()` failed with `backup is not supported with incompatible source and target databases`; `sqlcipher_export()` was not present in this build, and `serialize()` failed. `VACUUM INTO` succeeded and became the snapshot path. This is an implementation change inside the approved design, not a change to the security properties.
+- Portable export, restore, fresh-key rekey, wrong-passphrase rejection, and ciphertext tamper rejection passed. A failed migration transaction rolled back and the original database reopened.
+- Electron async `safeStorage` worked under DPAPI; the wrapped key was 74 bytes and a sequential second Electron process unwrapped it. A concurrent probe child was invalid because it shared the same userData/GPU cache, so restart evidence uses sequential processes.
+- `@github/keytar` 7.10.6 set, read, listed, and deleted a disposable Credential Manager entry under Electron 45.
+- electron-builder packaged only the Windows x64 `.node` files. The unpacked build was 378,963,727 bytes across 102 files; the final unsigned NSIS installer was 122,573,738 bytes (116.9 MiB), SHA256 `F24B0C22EA23E24ED8ACD0653FA31666D71BF6F357EE48FC9601BF5383E5D577`.
+
+The prototype entry point was removed from the production main process after the evidence was captured. Production storage code still needs its own integration tests, including an assertion that the recorded 4096-byte page size is pinned.
 
 ## G2 approval record
 
@@ -153,7 +168,7 @@ The owner approved all four G2 questions on 2026-10-25:
 3. Use passphrase-encrypted portable backups with scrypt and AES-256-GCM, excluding provider keys, with restore rekeying to a fresh local key and explicit confirmation.
 4. Run the eight prototype gates before M2 storage code; a failed gate stops the work with recorded evidence instead of a silent design change.
 
-This approval covers the design and the prototype gates. It does not approve spending, code signing, or production storage code before the gates pass.
+This approval covers the design and the prototype gates. The gates passed on 2026-10-25. It does not approve spending, code signing, or skipping the remaining M2 implementation and acceptance work.
 
 ## G2 questions (answered on 2026-10-25)
 

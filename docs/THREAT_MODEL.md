@@ -1,6 +1,6 @@
 # Threat Model
 
-Status: Draft for G2. Storage controls are proposed in `docs/DECISIONS/ADR-0002-storage-encryption.md`; they are not implemented yet. Revisit at M11 after the acceptance run.
+Status: Draft for G2. Storage controls are specified in `docs/DECISIONS/ADR-0002-storage-encryption.md`; the prototype gates passed on 2026-10-25, but production storage is not implemented yet. Revisit at M11 after the acceptance run.
 
 ## Assets
 
@@ -46,7 +46,7 @@ Status: Draft for G2. Storage controls are proposed in `docs/DECISIONS/ADR-0002-
 
 - The database key is random and is wrapped by Electron's asynchronous `safeStorage` API under the Windows user's DPAPI key. The unwrapped key is never written to disk.
 - Provider keys are stored only as Windows Credential Manager generic credentials. They are not in SQLite, JSON, logs, exports, or backups.
-- SQLCipher-compatible encryption protects the database, WAL, and (with `temp_store = MEMORY`) temporary data. This must be proven by the M2 prototype.
+- SQLCipher-compatible encryption protects the database, WAL, and (with `temp_store = MEMORY`) temporary data. The G2 prototype verified these properties; production code and a separate page-size assertion are still required.
 - JavaScript cannot guarantee memory zeroization. Key material may remain in garbage-collected memory until the process exits. The app minimises lifetime and avoids logging.
 - A local snapshot shares the DPAPI key and is not portable. A portable export uses a passphrase and can be restored on a new machine.
 - No automatic escrow exists. Loss of the Windows profile without a portable export means the database cannot be decrypted.

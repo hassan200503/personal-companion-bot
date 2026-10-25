@@ -4,7 +4,7 @@ Last updated: 2026-10-25
 Source of truth: `docs/MASTER_PROMPT.md`
 Status vocabulary is fixed by master prompt section 16. A requirement is never marked `IMPLEMENTED AND TESTED` without a recorded passing run. For `NOT IMPLEMENTED` rows, the evidence is the absence of companion code plus `docs/PROJECT_STATE.md`; the milestone column shows where the requirement is expected to land.
 
-Current position: M1 scaffold committed locally as `bb0815b` with state record `a35d58d`; local verification green. G2 approved the storage design on 2026-10-25; the eight prototype gates are pending and no storage code exists. GitHub CI and clean-machine install remain open.
+Current position: M1 scaffold committed locally as `bb0815b` with state record `a35d58d`. G2 approved the storage design on 2026-10-25 and all eight prototype gates passed; production storage code has not been written. The current unsigned package is SHA256 `F24B0C22EA23E24ED8ACD0653FA31666D71BF6F357EE48FC9601BF5383E5D577`. GitHub CI and clean-machine install remain open.
 
 ## M0 and project governance
 
@@ -15,7 +15,7 @@ Current position: M1 scaffold committed locally as `bb0815b` with state record `
 | M0-03 | Verify every Section 4 UNVERIFIED item from official sources and record URL/date | M0 | PARTIALLY IMPLEMENTED | `VERIFICATION_LOG.md` sections 2-4; open items in section 6 |
 | M0-04 | Write the stack ADR comparing Tauri/Rust, Electron/TypeScript and .NET/WPF or WinUI against the required criteria | M0 | IMPLEMENTED BUT NOT FULLY VERIFIED | `DECISIONS/ADR-0001-stack.md`; accepted at G1 |
 | M0-05 | Obtain owner approval of the stack ADR at G1 | M0 | IMPLEMENTED BUT NOT FULLY VERIFIED | Owner approved all four G1 questions on 2026-10-25 |
-| M0-06 | Record the minimum supported Windows version and install footprint | M0/M10 | PARTIALLY IMPLEMENTED | Minimum OS recommended in ADR; M1 installer measured; clean install still pending |
+| M0-06 | Record the minimum supported Windows version and install footprint | M0/M10 | PARTIALLY IMPLEMENTED | Minimum OS recommended in ADR; M1 and M2 packages measured; clean install still pending |
 
 ## M1 scaffold
 
@@ -27,21 +27,21 @@ Current position: M1 scaffold committed locally as `bb0815b` with state record `
 | M1-04 | Lint, typecheck, test harness and production build | M1 | IMPLEMENTED AND TESTED | `npm run verify` passed: ESLint, tsc, 2 files / 9 tests, build |
 | M1-05 | Logging with secret redaction | M1 | IMPLEMENTED AND TESTED | `packages/core/src/logger.ts`; 3 logger tests pass; key-name redaction only |
 | M1-06 | Versioned config schema | M1 | IMPLEMENTED AND TESTED | `packages/core/src/config.ts`; 5 config tests pass |
-| M1-07 | Installer generation and footprint measurement | M1 | IMPLEMENTED BUT NOT FULLY VERIFIED | Unsigned NSIS built: 115.9 MiB installer, 359.1 MiB unpacked, SHA256 `CEE02741491F0BF7253E05879BC85E49FE2BBAED228FCC76A9228EC451165CDB`; Authenticode `NotSigned`; not installed |
+| M1-07 | Installer generation and footprint measurement | M1 | IMPLEMENTED BUT NOT FULLY VERIFIED | M1 installer: 115.9 MiB, SHA256 `CEE02741491F0BF7253E05879BC85E49FE2BBAED228FCC76A9228EC451165CDB`, not installed. The current M2 package supersedes it: 116.9 MiB installer, SHA256 `F24B0C22EA23E24ED8ACD0653FA31666D71BF6F357EE48FC9601BF5383E5D577`, `NotSigned`; clean install still pending |
 | M1-08 | M1 milestone report | M1 | IMPLEMENTED BUT NOT FULLY VERIFIED | `docs/MILESTONES/M1.md`; committed in `bb0815b` |
 
 ## M2 storage and secrets
 
 | ID | Requirement | Milestone | Status | Evidence / note |
 | --- | --- | --- | --- | --- |
-| M2-01 | Encrypted local database for companion data | M2 | NOT IMPLEMENTED | G2 approved SQLCipher-compatible `better-sqlite3-multiple-ciphers` on 2026-10-25; no package installed |
+| M2-01 | Encrypted local database for companion data | M2 | NOT IMPLEMENTED | G2 approved and prototyped SQLCipher-compatible `better-sqlite3-multiple-ciphers`; package installed and gates passed, but no production database code |
 | M2-02 | Versioned migrations with up/down paths | M2 | NOT IMPLEMENTED | ADR-0002 proposes `schema_migrations`, checksums and pre-migration snapshots; no schema |
 | M2-03 | Encrypted persistence across restart proven by test | M2 | NOT IMPLEMENTED | No storage code or test |
 | M2-04 | Credential storage adapter for provider keys, with no plaintext fallback | M2 | NOT IMPLEMENTED | G2 approved Windows Credential Manager via `@github/keytar` or a minimal native adapter; no adapter |
 | M2-05 | Backup and restore, including portable owner-controlled recovery | M2 | NOT IMPLEMENTED | G2 approved passphrase-encrypted portable recovery; not implemented |
 | M2-06 | Separate stores or clearly separated tables for conversations, memories, credentials, config and audit | M2 | NOT IMPLEMENTED | ADR-0002 proposes separate tables and Credential Manager for provider keys; no schema |
 | M2-07 | No key material in database, config, logs, exports or tests; automated check | M2 | NOT IMPLEMENTED | No key or storage code; scan test not written |
-| M2-08 | Storage prototype gates pass before implementation | M2 | NOT IMPLEMENTED | Eight gates approved on 2026-10-25; none executed |
+| M2-08 | Storage prototype gates pass before implementation | M2 | IMPLEMENTED AND TESTED | All eight gates passed on 2026-10-25 with Node 22 and Electron 45; evidence in `VERIFICATION_LOG.md` section 9. Prototype entry point removed; production storage not yet written |
 
 
 ## Product scope
@@ -69,7 +69,7 @@ Current position: M1 scaffold committed locally as `bb0815b` with state record `
 | ARC-01 | A local agent process owns memory, gateway, tools, permissions and scheduler; the UI talks to it over an authenticated local channel | M1 | PARTIALLY IMPLEMENTED | Electron main + validated IPC with a per-window token exist; memory, gateway, tools and scheduler do not |
 | ARC-02 | Core domain logic is isolated behind typed contracts so Android v2 can reuse it | M1 | PARTIALLY IMPLEMENTED | `packages/core` exists with config, logger and provider contracts; domain modules are not implemented |
 | ARC-03 | Stable modules: shell, onboarding, profile, conversation, memory/retrieval, personalization, gateway, tool registry, permission engine, Windows adapters, workflow executor, scheduler, notifications, security/encryption, observability, import/export/backup, update management | M1-M10 | PARTIALLY IMPLEMENTED | Shell, core package, config and logger exist; most modules are absent |
-| ARC-04 | SQLite with encryption evaluated (SQLCipher or equivalent), FTS5 lexical search and versioned migrations from day one | M2 | NOT IMPLEMENTED | G2 approved SQLCipher-compatible storage, FTS5 in the same encrypted database and versioned migrations; gates pending |
+| ARC-04 | SQLite with encryption evaluated (SQLCipher or equivalent), FTS5 lexical search and versioned migrations from day one | M2 | NOT IMPLEMENTED | G2 approved SQLCipher-compatible storage, FTS5 in the same encrypted database and versioned migrations; prototype gates passed, but no production schema or storage code exists |
 | ARC-05 | Conversations, memories, credentials, configuration and audit records live in separate stores or clearly separated tables | M2 | NOT IMPLEMENTED | ADR-0002 proposes separate tables and Windows Credential Manager for provider keys; no schema |
 | ARC-06 | Retrieval combines lexical search, metadata, recency, relevance and access checks; embeddings only if a measured benefit justifies a hosted provider | M6 | NOT IMPLEMENTED | No retrieval |
 | ARC-07 | No Kubernetes, queues, microservices or hosted backend | M1-M11 | NOT IMPLEMENTED | Constraint; no infrastructure chosen |
@@ -183,7 +183,7 @@ Current position: M1 scaffold committed locally as `bb0815b` with state record `
 | --- | --- | --- | --- | --- |
 | TEST-01 | Unit tests | M1-M11 | PARTIALLY IMPLEMENTED | Vitest harness and 2 files / 9 tests for config and logger pass; most modules are absent or untested |
 | TEST-02 | Migration up and rollback tests | M2 | NOT IMPLEMENTED | No schema |
-| TEST-03 | Encryption and recovery tests | M2 | NOT IMPLEMENTED | G2 pending |
+| TEST-03 | Encryption and recovery tests | M2 | PARTIALLY IMPLEMENTED | Prototype tests passed for encryption, wrong key, restart, FTS5, `VACUUM INTO`, portable export/restore/rekey and tamper rejection; no production storage tests |
 | TEST-04 | Memory create, retrieve, correct and delete tests | M6 | NOT IMPLEMENTED | No code |
 | TEST-05 | Provider fallback, quota exhaustion, timeout and cancellation tests with the mock provider | M3 | NOT IMPLEMENTED | No code |
 | TEST-06 | Degraded-mode tests | M4 | NOT IMPLEMENTED | No code |

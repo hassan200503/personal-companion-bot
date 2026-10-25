@@ -9,7 +9,7 @@ const shared = {
   target: "node22",
   format: "cjs",
   sourcemap: true,
-  external: ["electron"],
+  external: ["electron", "better-sqlite3-multiple-ciphers", "@github/keytar"],
   logLevel: "info"
 };
 

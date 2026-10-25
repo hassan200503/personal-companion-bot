@@ -11,6 +11,10 @@
     "start": "electron .",
     "package": "npm run build && electron-builder --win nsis --x64"
   },
+  "dependencies": {
+    "@github/keytar": "7.10.6",
+    "better-sqlite3-multiple-ciphers": "13.0.3"
+  },
   "devDependencies": {
     "@companion/core": "0.1.0",
     "@types/react": "^19.3.0",
@@ -27,12 +31,28 @@
     "appId": "com.kkc36.companion",
     "productName": "Companion",
     "asar": true,
+    "npmRebuild": false,
+    "asarUnpack": [
+      "**/*.node"
+    ],
     "directories": {
       "output": "release"
     },
     "files": [
       "dist/**/*",
-      "package.json"
+      "package.json",
+      "node_modules/**/*",
+      "!node_modules/.bin/**",
+      "!node_modules/node-addon-api/**",
+      "!node_modules/better-sqlite3-multiple-ciphers/deps/**",
+      "!node_modules/better-sqlite3-multiple-ciphers/src/**",
+      "!node_modules/better-sqlite3-multiple-ciphers/prebuilds/*",
+      "node_modules/better-sqlite3-multiple-ciphers/prebuilds/win32-x64.node",
+      "!node_modules/@github/keytar/src/**",
+      "!node_modules/@github/keytar/script/**",
+      "!node_modules/@github/keytar/build/**",
+      "!node_modules/@github/keytar/prebuilds/**",
+      "node_modules/@github/keytar/prebuilds/win32-x64/**"
     ],
     "win": {
       "target": [
