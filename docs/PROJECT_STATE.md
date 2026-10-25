@@ -1,9 +1,9 @@
 # Project State
 
 Last updated: 2026-10-25
-Current milestone: M2, Storage and secrets (G2 proposal)
-Current task: owner review of `docs/DECISIONS/ADR-0002-storage-encryption.md` at G2; no storage code written
-Status: waiting on owner; G2 proposal committed as `57aee52`; M1 scaffold committed as `bb0815b`; local verification green; GitHub CI and clean-machine install remain unverified
+Current milestone: M2, Storage and secrets (G2 approved; prototype gates)
+Current task: run the eight G2 prototype gates and record evidence; do not write production storage code until they pass
+Status: G2 approved by the owner on 2026-10-25; prototype gates pending; M1 scaffold committed as `bb0815b`; GitHub CI and clean-machine install remain unverified
 
 ## What this project is
 
@@ -33,17 +33,18 @@ The existing WhatsApp bot is legacy. It must keep working. Do not modify or dele
 - Wrote `docs/DECISIONS/ADR-0002-storage-encryption.md` proposing a SQLCipher-compatible encrypted database, a DPAPI-wrapped random database key, Windows Credential Manager for provider keys, passphrase backups, and prototype gates.
 - Wrote the initial `docs/THREAT_MODEL.md` covering local storage, provider egress, backup exposure, same-user malware and future tool risks.
 - Committed the G2 proposal and threat model locally as `57aee52` (`G2: propose encrypted storage and key protection`). Nothing has been pushed.
+- Obtained G2 approval on 2026-10-25 for all four questions: the proposed SQLCipher-compatible package, the DPAPI-wrapped random database key with Credential Manager provider keys and no escrow, passphrase backups, and the eight prototype gates. Recorded in ADR-0002.
 
 ## In progress
 
-- G2 is awaiting the owner's decision. The proposal is committed as `57aee52`; no encryption package, database, key, credential entry, backup or migration code exists.
+- Running the eight G2 prototype gates. The design is approved, but no production storage, key, credential, backup or migration code exists yet.
 - M1 scaffold and report are committed as `bb0815b`. CI execution on GitHub and a clean-machine install remain open.
 
 ## Blocked
 
 | Item | Reason | Unblock condition |
 | --- | --- | --- |
-| G2 encryption/key protection | Owner decision required by the master prompt | Owner answers the four G2 questions in ADR-0002 |
+| G2 prototype gates | Eight gates approved but not executed | Run each gate and record pass/fail evidence in `docs/VERIFICATION_LOG.md` |
 | Gemini Kenya eligibility | Official available-regions page timed out twice | Owner tests AI Studio signup, or the page is fetched later |
 | Mistral account verification details | Console returned a transport error; docs confirm the key page but not every signup step | Owner tests signup and records the steps |
 | OpenRouter free allowance without purchase | FAQ and Terms conflict | Owner checks the dashboard/support; default to G4 |
@@ -56,9 +57,9 @@ The existing WhatsApp bot is legacy. It must keep working. Do not modify or dele
 
 ## Next three tasks
 
-1. Owner answers G2 on the storage engine, key hierarchy, backup/recovery and prototype rule.
-2. If approved: run the eight prototype gates on Windows with Electron 45 and record the evidence before merging storage code.
-3. Then implement M2 in thin slices: migrations, encrypted persistence across restart, Credential Manager adapter, backup and restore, with tests.
+1. Run the eight G2 prototype gates on Windows with Electron 45 and record the evidence.
+2. If all gates pass: implement M2 migrations and encrypted persistence across restart.
+3. Then add the Credential Manager adapter, backup/restore and the key-material scans, with tests.
 
 ## Commands that work
 
@@ -102,15 +103,13 @@ npx electron --version
 - Runtime memory was not measured. The main bundle is 743.4 KB because Zod and core are bundled, and source maps are included in the package.
 - The legacy bot was not exercised in this session; its runtime health is unknown and unchanged.
 - Some provider facts remain unverified and are marked in `docs/VERIFICATION_LOG.md` section 6. They must not be presented as confirmed.
-- No encrypted storage, credential adapter, migration, backup or restore code exists yet; ADR-0002 is proposed only.
+- No production encrypted storage, credential adapter, migration, backup or restore code exists yet; G2 approved the design on 2026-10-25 and gates are pending.
 - `better-sqlite3-multiple-ciphers` 13.0.3, `@github/keytar` 7.10.6, FTS5, WAL, temp-file encryption and packaged native modules are untested on this machine and Electron 45.
 - The threat model is an initial draft and does not yet cover tools, UIA, voice or update signing in depth.
 
 ## Open questions
 
-- G2: approve SQLCipher-compatible `better-sqlite3-multiple-ciphers`, or choose official SQLCipher Community with a custom addon, or application-level encryption?
-- G2: approve the DPAPI-wrapped random database key and Windows Credential Manager for provider keys, with no plaintext fallback and no escrow?
-- G2: approve passphrase-encrypted portable backups using scrypt and AES-256-GCM, with provider keys excluded and restore rekeying to a fresh local key?
+- G2 gate results: will the approved native package and keytar work under Electron 45, or will the official SQLCipher or native CredWriteW fallback be required?
 - Providers: will the owner authorise Gemini or Mistral training-data use (G3), or pay $5 for OpenRouter (G4)? Default remains Groq only.
 - UIA: is a .NET helper acceptable if Electron's native path is insufficient? This is G6.
 - Kenya data-protection obligations: legal review is outstanding; do not claim compliance.
@@ -118,4 +117,4 @@ npx electron --version
 
 ## Handover note
 
-Read `docs/MASTER_PROMPT.md` completely, then this file, then `docs/DECISIONS/ADR-0002-storage-encryption.md`, `docs/THREAT_MODEL.md` and `docs/MILESTONES/M1.md`. G1 is approved. The M1 scaffold is committed as `bb0815b`, with the state record at `a35d58d`; local verification is green. The G2 proposal is committed as `57aee52` and is awaiting the owner's answers in ADR-0002. Do not install the native encryption package, create a database or key, store credentials, or write storage code until G2 is approved. The legacy WhatsApp bot is separate and must remain untouched. The M0 documents are committed locally as `34f164a` and `14871e8`; do not push without owner approval. No companion secrets, provider accounts or spending exist. The M1 installer is unsigned and has not been installed.
+Read `docs/MASTER_PROMPT.md` completely, then this file, then `docs/DECISIONS/ADR-0002-storage-encryption.md`, `docs/THREAT_MODEL.md` and `docs/MILESTONES/M1.md`. G1 and G2 are approved. The M1 scaffold is committed as `bb0815b`, with the state record at `a35d58d`; local verification is green. The accepted G2 design is in ADR-0002; run its eight prototype gates before writing production storage code. The legacy WhatsApp bot is separate and must remain untouched. The M0 documents are committed locally as `34f164a` and `14871e8`; do not push without owner approval. No companion secrets, provider accounts or spending exist. The M1 installer is unsigned and has not been installed.

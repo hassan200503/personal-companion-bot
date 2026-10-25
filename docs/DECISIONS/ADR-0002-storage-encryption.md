@@ -1,8 +1,8 @@
 # ADR-0002: Encrypted storage and key protection
 
-- Status: Proposed, awaiting owner approval at G2
+- Status: Accepted at G2 on 2026-10-25
 - Date: 2026-10-25
-- Deciders: owner
+- Deciders: owner (approved 2026-10-25)
 - Author: implementation agent
 - Related: `docs/MASTER_PROMPT.md` sections 5, 11, 13 and 14; `docs/DECISIONS/ADR-0001-stack.md`; `docs/VERIFICATION_LOG.md` D-01 to D-06
 
@@ -12,9 +12,9 @@ M2 must deliver versioned migrations, an encrypted database, a credential-storag
 
 The companion is a single-user Windows application. It is not a server and has no multi-user recovery service. The threat model must distinguish offline disk theft, another Windows user, and malware running as the same user. DPAPI and Windows Credential Manager protect against other users and raise the bar for casual offline disk access, but not against an offline attacker who can recover the Windows account password, and not against malware running as the same user.
 
-This ADR proposes a concrete design but has not installed the native packages, created a database, or stored a key. The prototype gates at the end must pass before M2 implementation. No paid SQLCipher licence, certificate, or service is proposed.
+This ADR defines a concrete design. The native packages have not been installed, no database or key has been created, and the prototype gates at the end have not run. No paid SQLCipher licence, certificate, or service is proposed.
 
-## Decision proposed
+## Decision
 
 ### 1. One SQLCipher-format database
 
@@ -78,7 +78,7 @@ Two different things are needed:
 1. A local snapshot for crash and migration recovery. It is the same encrypted database under the same DPAPI-wrapped key, so it protects against database corruption but not loss of the Windows profile.
 2. A portable, owner-initiated export. It must be readable after a profile loss or on a new PC, so it uses a user-supplied passphrase rather than DPAPI.
 
-The portable export is proposed as:
+The portable export design is:
 
 - Make a consistent snapshot with better-sqlite3's backup API.
 - Build a payload containing the encrypted database snapshot, its database key, and a versioned manifest. The database key is inside the encrypted envelope because a new machine has no DPAPI key for this app.
@@ -144,11 +144,22 @@ The following must be proven on Windows with Electron 45 before storage code is 
 
 If any gate fails, stop and record the evidence. Do not silently switch to plaintext, a commercial licence, or a paid service.
 
-## G2 questions for the owner
+## G2 approval record
+
+The owner approved all four G2 questions on 2026-10-25:
+
+1. Use `better-sqlite3-multiple-ciphers` 13.0.3 in SQLCipher-compatible mode, including the native packaging work and the official SQLCipher Community fallback if the package fails a gate.
+2. Use the random DEK wrapped by asynchronous Electron `safeStorage`/DPAPI, Windows Credential Manager for provider keys, fail-closed behaviour, and no automatic escrow.
+3. Use passphrase-encrypted portable backups with scrypt and AES-256-GCM, excluding provider keys, with restore rekeying to a fresh local key and explicit confirmation.
+4. Run the eight prototype gates before M2 storage code; a failed gate stops the work with recorded evidence instead of a silent design change.
+
+This approval covers the design and the prototype gates. It does not approve spending, code signing, or production storage code before the gates pass.
+
+## G2 questions (answered on 2026-10-25)
 
 1. Approve the SQLCipher-compatible `better-sqlite3-multiple-ciphers` 13.0.3 approach, including the native packaging work and the official-SQLCipher fallback?
 2. Approve the key hierarchy: random DEK wrapped by async Electron `safeStorage`/DPAPI, provider keys in Windows Credential Manager, no plaintext fallback, and no automatic escrow?
 3. Approve portable passphrase backups using scrypt and AES-256-GCM, excluding provider keys, with restore rekeying to a fresh local key and requiring explicit confirmation?
 4. Approve the prototype gates and the rule that a failed gate stops M2 with evidence rather than silently changing the design?
 
-If the owner prefers a different backup/recovery model (for example a printed recovery key or no portable backup in v1), that must be decided before M2 implementation.
+All four were answered as recorded above. A later change to these choices requires a new ADR.

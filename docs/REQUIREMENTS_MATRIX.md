@@ -4,7 +4,7 @@ Last updated: 2026-10-25
 Source of truth: `docs/MASTER_PROMPT.md`
 Status vocabulary is fixed by master prompt section 16. A requirement is never marked `IMPLEMENTED AND TESTED` without a recorded passing run. For `NOT IMPLEMENTED` rows, the evidence is the absence of companion code plus `docs/PROJECT_STATE.md`; the milestone column shows where the requirement is expected to land.
 
-Current position: M1 scaffold committed locally as `bb0815b` with state record `a35d58d`; local verification green. The G2 proposal is committed as `57aee52` in `docs/DECISIONS/ADR-0002-storage-encryption.md` and awaits owner approval; no storage code exists. GitHub CI and clean-machine install remain open.
+Current position: M1 scaffold committed locally as `bb0815b` with state record `a35d58d`; local verification green. G2 approved the storage design on 2026-10-25; the eight prototype gates are pending and no storage code exists. GitHub CI and clean-machine install remain open.
 
 ## M0 and project governance
 
@@ -34,14 +34,14 @@ Current position: M1 scaffold committed locally as `bb0815b` with state record `
 
 | ID | Requirement | Milestone | Status | Evidence / note |
 | --- | --- | --- | --- | --- |
-| M2-01 | Encrypted local database for companion data | M2 | NOT IMPLEMENTED | ADR-0002 proposes SQLCipher-compatible `better-sqlite3-multiple-ciphers`; G2 pending |
+| M2-01 | Encrypted local database for companion data | M2 | NOT IMPLEMENTED | G2 approved SQLCipher-compatible `better-sqlite3-multiple-ciphers` on 2026-10-25; no package installed |
 | M2-02 | Versioned migrations with up/down paths | M2 | NOT IMPLEMENTED | ADR-0002 proposes `schema_migrations`, checksums and pre-migration snapshots; no schema |
 | M2-03 | Encrypted persistence across restart proven by test | M2 | NOT IMPLEMENTED | No storage code or test |
-| M2-04 | Credential storage adapter for provider keys, with no plaintext fallback | M2 | NOT IMPLEMENTED | ADR-0002 proposes Windows Credential Manager via `@github/keytar` or a minimal native adapter; G2 pending |
-| M2-05 | Backup and restore, including portable owner-controlled recovery | M2 | NOT IMPLEMENTED | ADR-0002 proposes local snapshots and scrypt/AES-256-GCM passphrase exports; not implemented |
+| M2-04 | Credential storage adapter for provider keys, with no plaintext fallback | M2 | NOT IMPLEMENTED | G2 approved Windows Credential Manager via `@github/keytar` or a minimal native adapter; no adapter |
+| M2-05 | Backup and restore, including portable owner-controlled recovery | M2 | NOT IMPLEMENTED | G2 approved passphrase-encrypted portable recovery; not implemented |
 | M2-06 | Separate stores or clearly separated tables for conversations, memories, credentials, config and audit | M2 | NOT IMPLEMENTED | ADR-0002 proposes separate tables and Credential Manager for provider keys; no schema |
 | M2-07 | No key material in database, config, logs, exports or tests; automated check | M2 | NOT IMPLEMENTED | No key or storage code; scan test not written |
-| M2-08 | Storage prototype gates pass before implementation | M2 | NOT IMPLEMENTED | Eight gates are defined in ADR-0002; none executed |
+| M2-08 | Storage prototype gates pass before implementation | M2 | NOT IMPLEMENTED | Eight gates approved on 2026-10-25; none executed |
 
 
 ## Product scope
@@ -69,7 +69,7 @@ Current position: M1 scaffold committed locally as `bb0815b` with state record `
 | ARC-01 | A local agent process owns memory, gateway, tools, permissions and scheduler; the UI talks to it over an authenticated local channel | M1 | PARTIALLY IMPLEMENTED | Electron main + validated IPC with a per-window token exist; memory, gateway, tools and scheduler do not |
 | ARC-02 | Core domain logic is isolated behind typed contracts so Android v2 can reuse it | M1 | PARTIALLY IMPLEMENTED | `packages/core` exists with config, logger and provider contracts; domain modules are not implemented |
 | ARC-03 | Stable modules: shell, onboarding, profile, conversation, memory/retrieval, personalization, gateway, tool registry, permission engine, Windows adapters, workflow executor, scheduler, notifications, security/encryption, observability, import/export/backup, update management | M1-M10 | PARTIALLY IMPLEMENTED | Shell, core package, config and logger exist; most modules are absent |
-| ARC-04 | SQLite with encryption evaluated (SQLCipher or equivalent), FTS5 lexical search and versioned migrations from day one | M2 | NOT IMPLEMENTED | ADR-0002 proposes SQLCipher-compatible storage, FTS5 in the same encrypted database and versioned migrations; G2 pending |
+| ARC-04 | SQLite with encryption evaluated (SQLCipher or equivalent), FTS5 lexical search and versioned migrations from day one | M2 | NOT IMPLEMENTED | G2 approved SQLCipher-compatible storage, FTS5 in the same encrypted database and versioned migrations; gates pending |
 | ARC-05 | Conversations, memories, credentials, configuration and audit records live in separate stores or clearly separated tables | M2 | NOT IMPLEMENTED | ADR-0002 proposes separate tables and Windows Credential Manager for provider keys; no schema |
 | ARC-06 | Retrieval combines lexical search, metadata, recency, relevance and access checks; embeddings only if a measured benefit justifies a hosted provider | M6 | NOT IMPLEMENTED | No retrieval |
 | ARC-07 | No Kubernetes, queues, microservices or hosted backend | M1-M11 | NOT IMPLEMENTED | Constraint; no infrastructure chosen |
@@ -149,7 +149,7 @@ Current position: M1 scaffold committed locally as `bb0815b` with state record `
 | WIZ-06 | Validate with a tiny request and show a specific result: connected, invalid key, phone verification, region unavailable, rate-limited | M5 | NOT IMPLEMENTED | No code |
 | WIZ-07 | Reliability status shows connected provider count and prompts for one more; user can skip into memory-and-notes mode | M5 | NOT IMPLEMENTED | No code |
 | WIZ-08 | Settings > Providers lists status, tests, and adds/replaces/removes keys | M5 | NOT IMPLEMENTED | No code |
-| WIZ-09 | Keys only in Windows credential storage, masked, never shown after saving, never in memory DB, config, logs, exports, backups or crash reports; prefix hints are warnings only | M2/M5 | NOT IMPLEMENTED | ADR-0002 proposes Credential Manager-only storage and exclusion from backups; G2 pending |
+| WIZ-09 | Keys only in Windows credential storage, masked, never shown after saving, never in memory DB, config, logs, exports, backups or crash reports; prefix hints are warnings only | M2/M5 | NOT IMPLEMENTED | G2 approved Credential Manager-only storage and exclusion from backups; no adapter |
 
 ## Security and privacy
 

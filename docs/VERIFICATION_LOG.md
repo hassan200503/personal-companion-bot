@@ -144,7 +144,9 @@ Not yet verified: installing the NSIS package, first-run behaviour on a clean Wi
 
 ## 8. M2 G2 storage and key research
 
-Research only. No encryption package was installed, no database was created, and no key was stored. These rows support the proposed ADR-0002; they do not approve it.
+Research only. No encryption package was installed, no database was created, and no key was stored. These rows support the accepted ADR-0002; they do not by themselves prove the design works.
+
+G2 was approved by the owner on 2026-10-25 for all four questions: the proposed SQLCipher-compatible package, the DPAPI-wrapped random database key with Windows Credential Manager provider keys and no escrow, passphrase backups, and the eight prototype gates. Gate evidence belongs in section 9 and must be recorded before production storage code.
 
 | ID | Evidence | Source | Status |
 | --- | --- | --- | --- |
