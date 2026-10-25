@@ -25,7 +25,7 @@ Status legend:
 | R-05 | The only npm scripts are `start`, `reset-session`, `test-companion` and `reflect-now`. There is no test runner, lint script, typecheck script, CI configuration or build step for a desktop app. | `package.json` | VERIFIED |
 | R-06 | Existing companion data layer uses `node:sqlite` `DatabaseSync` with WAL and tables `facts`, `reminders`, `journal`, `conversation_log`. Existing scheduling is `node-cron`; existing LLM path is Gemini first with Groq fallback; existing voice path is Groq Whisper STT and Orpheus TTS. | Source inspection of `src/companion/` (summary retained in `PROJECT_STATE.md`) | VERIFIED |
 | R-07 | `node_modules/`, `.env`, `auth/`, `logs/`, `data/style-log.jsonl`, `data/companion.db*` and `latest-qr.png` are ignored. `.env` exists and must not be read. | `.gitignore`; directory listing | VERIFIED |
-| R-08 | M0 created `docs/MASTER_PROMPT.md`, `AGENTS.md`, `opencode.json`, this log, the requirements matrix, the state file, the stack ADR and the Android v2 notes. No companion code exists yet. | Directory listing and file reads | VERIFIED |
+| R-08 | M0 created `docs/MASTER_PROMPT.md`, `AGENTS.md`, `opencode.json`, this log, the requirements matrix, the state file, the stack ADR and the Android v2 notes. M1 created the `companion/` scaffold; see section 7. | Directory listing and file reads | VERIFIED |
 | R-09 | `docs/MASTER_PROMPT.md` contains sections 1-16 of the owner's prompt and is the governing document. | File read | VERIFIED |
 
 ## 2. Windows platform and packaging
@@ -56,7 +56,7 @@ Status legend:
 | W-22 | Windows provides `Windows.Media.SpeechSynthesis.SpeechSynthesizer` and installed Microsoft-signed voices without a paid service. Offline behaviour and voice availability by locale were not verified. | `https://learn.microsoft.com/en-us/uwp/api/windows.media.speechsynthesis.speechsynthesizer` | PARTIAL |
 | W-23 | As of 2026-10-25: Windows 11 26H2 is current (released 2026-09-29); 25H2 is supported to 2027-10-12; 24H2 Home/Pro ended updates on 2026-10-13; 23H2 Home/Pro has ended; consumer Windows 10 reached end of support on 2025-10-14, with only LTSC/Enterprise still supported. | `https://learn.microsoft.com/en-us/windows/release-health/windows11-release-information` | VERIFIED |
 | W-24 | .NET's Windows install guidance limits Windows 10 support to LTSC/Enterprise editions; Windows 11 is the supported consumer path. | `https://learn.microsoft.com/en-us/dotnet/core/install/windows` | VERIFIED |
-| W-25 | Installer size and installed footprint were not measured. There is no companion build yet. Measure on the M1 scaffold and record final numbers at M10. | Not measured | DEFERRED |
+| W-25 | First local M1 package, unsigned NSIS x64: installer 121,556,431 bytes (115.9 MiB); unpacked app 376,500,216 bytes (359.1 MiB) across 73 files. SHA256 `CEE02741491F0BF7253E05879BC85E49FE2BBAED228FCC76A9228EC451165CDB`; Authenticode status `NotSigned`; default Electron icon. The installer was built but not installed, so installed size and first-run behaviour are not yet verified. | Local `npm run package` output; `Get-Item`, directory size, `Get-FileHash`, `Get-AuthenticodeSignature` | PARTIAL |
 | W-26 | Recommended minimum OS for v1: 64-bit Windows 11 25H2 or 26H2. Windows 10 22H2 LTSC/Enterprise may be best-effort, but consumer Windows 10 is out of support and should not be a supported target. This is a change from the master prompt's provisional "Windows 10/11" wording and requires owner approval at G1. | Analysis of W-23, W-24, W-12, W-13 | RECOMMENDATION |
 | W-27 | electron-builder's default Windows target is NSIS, producing a classic `.exe` installer. It supports per-user installation, portable builds and `electron-updater`. A stable `appId` is required because it becomes the AUMID and the basis for upgrade/uninstall identity. | `https://www.electron.build/docs/nsis`; `https://www.electron.build/docs/targets/`; `https://www.electron.build/docs/configuration/` | VERIFIED |
 | W-28 | Playwright supports Electron automation through the experimental `_electron` API, for Electron v21 and later. Native dialogs must be stubbed in the main process. Treat Electron E2E as a supported-but-experimental dependency and keep a fallback plan. | `https://playwright.dev/docs/api/class-electron` | VERIFIED |
@@ -122,3 +122,19 @@ Status legend:
 | Speech offline behaviour and locale voices | WinRT APIs exist but offline/locale details were not verified | Prototype in the voice milestone after G6 |
 | Trusted code signing for a private individual project | No free trusted route for a closed private repo in Kenya | Owner decides: unsigned v1, pay under G4, or open-source and apply to SignPath |
 | Kenya data-protection obligations | No legal review | Record as open; do not claim compliance (master prompt section 11) |
+
+## 7. M1 build and test evidence
+
+All commands below were run from `companion/` on 2026-10-25 unless stated otherwise.
+
+| ID | Evidence | Result |
+| --- | --- | --- |
+| V-01 | `npm run verify` | PASS: ESLint clean; `tsc --noEmit` clean; 2 test files and 9 tests passed; main, preload and renderer builds completed |
+| V-02 | `npx electron --version` from `companion/apps/desktop` | `v45.0.0` after the Electron binary downloaded. The first attempt timed out during the download and was retried |
+| V-03 | `npm start` from `companion/` | The main process logged `desktop window created` with `renderer: file`. The command was terminated by the tool timeout after 15 seconds because the app stays open; no Electron process remained afterwards. No screenshot was captured |
+| V-04 | `npm run package` from `companion/` | PASS: electron-builder 26.18.0 produced `release/Companion-0.1.0-x64.exe` (NSIS x64). Signing was skipped because no certificate is configured; the default Electron icon was used |
+| V-04b | Started `release/win-unpacked/Companion.exe`, waited 6 seconds, checked `Get-Process -Name Companion`, then stopped it | PASS for launch: 4 `Companion` processes were running and the first reported `Responding = True`. The UI and IPC button were not exercised. No `Companion` process remained after the stop |
+| V-05 | `Get-Item`, recursive file size, `Get-FileHash` and `Get-AuthenticodeSignature` on the installer | Installer 121,556,431 bytes; unpacked 376,500,216 bytes across 73 files; SHA256 `CEE02741491F0BF7253E05879BC85E49FE2BBAED228FCC76A9228EC451165CDB`; `NotSigned` |
+| V-06 | `npm ls --depth=0` | Electron 45.0.0, electron-builder 26.18.0, Vite 8.3.5, TypeScript 6.0.3, Vitest 5.0.5, React 19.3.1, Zod 4.6.7, ESLint 10.13.0 |
+
+Not yet verified: installing the NSIS package, first-run behaviour on a clean Windows VM, tray/startup behaviour, E2E automation, and CI execution on GitHub. Those remain open.

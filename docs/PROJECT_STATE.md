@@ -1,9 +1,9 @@
 # Project State
 
 Last updated: 2026-10-25
-Current milestone: M0, Discovery and verification
-Current task: finish the M0 documents and obtain owner approval of the stack ADR at G1
-Status: waiting on the owner; no companion code has been written
+Current milestone: M1, Scaffold
+Current task: commit the M1 scaffold and record the milestone report; then prepare the G2 encryption proposal
+Status: M1 scaffold implemented and locally verified; commit pending
 
 ## What this project is
 
@@ -21,22 +21,27 @@ The existing WhatsApp bot is legacy. It must keep working. Do not modify or dele
 - Verified code-signing options: unsigned SmartScreen behaviour, Azure Artifact Signing price and availability, OV/EV prices, SignPath Foundation conditions and the private-repo blocker.
 - Wrote the G1 ADR recommending Electron + TypeScript, Windows 11 25H2/26H2 x64 as the baseline, an isolated `companion/` layout, and an unsigned v1 with SHA256.
 - Committed the M0 documents locally as `34f164a` (`M0: record verification findings and propose Electron stack`). Nothing has been pushed.
+- Obtained G1 approval on 2026-10-25: Electron + TypeScript; Windows 11 25H2/26H2 x64 baseline; isolated `companion/`; unsigned v1 with SHA256. Recorded in `docs/DECISIONS/ADR-0001-stack.md`.
+- Created the M1 scaffold: `companion/` npm workspace, Electron 45.0.0 main/preload, React 19 renderer, strict TypeScript, ESLint, Vitest, Zod config schema, redacting logger, provider contracts, GitHub Actions workflow and electron-builder NSIS configuration.
+- Ran `npm run verify`: ESLint clean, TypeScript clean, 2 test files and 9 tests passed, main/preload/renderer builds completed.
+- Launched the app with `npm start`: the main process logged `desktop window created`; the command was stopped by the tool timeout because the window stays open.
+- Built the unsigned NSIS installer: 115.9 MiB, unpacked 359.1 MiB across 73 files, SHA256 `CEE02741491F0BF7253E05879BC85E49FE2BBAED228FCC76A9228EC451165CDB`, Authenticode `NotSigned`.
+- Wrote the M1 milestone report at `docs/MILESTONES/M1.md`.
 
 ## In progress
 
-- M0 exit: the verification log is filled and open items are marked; the ADR is drafted. Owner approval at G1 is outstanding.
-- Local commit `34f164a` contains the M0 documents. A small follow-up commit records this state.
+- M1 is implemented and locally verified. The scaffold and M1 report still need a local commit.
+- CI is written but has not run on GitHub because the repository has not been pushed. The installer was built but not installed.
 
 ## Blocked
 
 | Item | Reason | Unblock condition |
 | --- | --- | --- |
-| G1 stack approval | Owner decision required by the master prompt | Owner approves or rejects ADR-0001 |
 | Gemini Kenya eligibility | Official available-regions page timed out twice | Owner tests AI Studio signup, or the page is fetched later |
 | Mistral account verification details | Console returned a transport error; docs confirm the key page but not every signup step | Owner tests signup and records the steps |
 | OpenRouter free allowance without purchase | FAQ and Terms conflict | Owner checks the dashboard/support; default to G4 |
 | Exact free-tier limits | Providers expose these in their consoles | Measure from the account and response headers in M3 |
-| Installer/footprint numbers | No build exists | Measure in M1 and M10 |
+| Clean-machine install test | Installer built but not installed; no clean Windows VM used | Install and uninstall on a clean VM at M10/M11 and record evidence |
 | Trusted signing | No free trusted route for a private `UNLICENSED` repo in Kenya; paid routes are G4 | Owner chooses unsigned v1, paid certificate, or open-sourcing |
 | SQLCipher packaging | Not evaluated; G2 design decision | G2 prototype and ADR |
 | UIA implementation | Requires a native adapter and G6 approval | Prototype after the core, then G6 |
@@ -44,13 +49,13 @@ The existing WhatsApp bot is legacy. It must keep working. Do not modify or dele
 
 ## Next three tasks
 
-1. Owner reviews `docs/DECISIONS/ADR-0001-stack.md` and answers the four G1 questions. Do not scaffold before approval.
-2. On approval: M1 scaffold under `companion/` with npm workspaces, Electron main/preload/renderer, TypeScript strict, ESLint, Vitest, Playwright, GitHub Actions, redacting logger, config schema and a measured install footprint. Write the M1 milestone report.
-3. Start M2 storage and secrets: propose the encryption design and key hierarchy at G2 before implementing SQLCipher or an equivalent; then migrations, encrypted persistence, credential adapter, backup and restore.
+1. Commit the M1 scaffold and report locally; confirm the working tree is clean and record the commit hash.
+2. Draft the G2 proposal: encryption approach, key hierarchy, recovery and credential-storage adapter. Stop at G2 for owner approval before writing storage code.
+3. After G2 approval: M2 migrations, encrypted persistence, credential adapter, backup and restore, with tests.
 
 ## Commands that work
 
-These are the project commands used successfully so far:
+Repository level:
 
 ```text
 git status --short
@@ -60,25 +65,45 @@ node -v
 npm -v
 ```
 
-There is no companion build, test, lint or typecheck command yet. Do not invent one. The legacy bot was not started and its `test-companion` script was not run.
+From `companion/`:
+
+```text
+npm install
+npm run lint
+npm run typecheck
+npm run test
+npm run build
+npm run verify
+npm start
+npm run package
+```
+
+From `companion/apps/desktop/`:
+
+```text
+npx electron --version
+```
+
+`npm run verify` is the required gate before a commit. `npm start` opens a window and does not exit by itself. `npm run package` writes to `apps/desktop/release/` and is unsigned. The legacy bot was not started and its `test-companion` script was not run.
 
 ## Known defects
 
-- No companion code exists, so there are no companion defects yet.
+- The NSIS installer is unsigned, uses the default Electron icon and has not been installed. SmartScreen, installed size, uninstall and first-run behaviour are unverified.
+- CI is written but has not run on GitHub because the repository has not been pushed.
+- No Playwright/Electron end-to-end test exists; the IPC button was not clicked during the smoke launch.
+- Logger redaction covers sensitive key names but not secrets embedded in free-text messages or error strings.
+- Runtime memory was not measured. The main bundle is 743.4 KB because Zod and core are bundled, and source maps are included in the package.
 - The legacy bot was not exercised in this session; its runtime health is unknown and unchanged.
 - Some provider facts remain unverified and are marked in `docs/VERIFICATION_LOG.md` section 6. They must not be presented as confirmed.
 
 ## Open questions
 
-- G1: Electron, Tauri or .NET? The ADR recommends Electron.
-- Minimum OS: approve Windows 11 25H2/26H2 x64, with Windows 10 LTSC/Enterprise best-effort and ARM64 after x64?
-- Repository layout: approve the isolated `companion/` directory so the legacy bot and pm2 setup stay untouched?
-- Distribution: approve an unsigned v1 installer with SHA256 and a documented SmartScreen warning, deferring signing to M10 and spend to G4?
 - Providers: will the owner authorise Gemini or Mistral training-data use (G3), or pay $5 for OpenRouter (G4)? Default remains Groq only.
 - Encryption: SQLCipher, an equivalent, or application-level encryption? This is G2.
 - UIA: is a .NET helper acceptable if Electron's native path is insufficient? This is G6.
 - Kenya data-protection obligations: legal review is outstanding; do not claim compliance.
+- Clean-machine install and uninstall evidence: outstanding until M10/M11.
 
 ## Handover note
 
-Read `docs/MASTER_PROMPT.md` completely, then this file, then the ADR. The next agent should not scaffold anything until the owner answers G1. The legacy WhatsApp bot is separate and must remain untouched. The M0 documents are committed locally as `34f164a`; do not push without owner approval. If the session ends before G1, the state is complete: no companion code, no generated secrets, no provider accounts and no spending.
+Read `docs/MASTER_PROMPT.md` completely, then this file, then the ADR and `docs/MILESTONES/M1.md`. G1 is approved and the M1 scaffold is implemented; commit it locally, then prepare the G2 proposal and stop for owner approval before writing storage code. The legacy WhatsApp bot is separate and must remain untouched. The M0 documents are committed locally as `34f164a` and `14871e8`; do not push without owner approval. No companion secrets, provider accounts or spending exist. The M1 installer is unsigned and has not been installed.

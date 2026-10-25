@@ -1,6 +1,6 @@
 # ADR-0001: Desktop stack for the Windows-first companion
 
-- Status: Proposed, awaiting owner approval at G1
+- Status: Accepted at G1 on 2026-10-25
 - Date: 2026-10-25
 - Deciders: owner
 - Author: implementation agent
@@ -100,7 +100,7 @@ Positive:
 
 Negative and mitigations:
 
-- Large installer and memory use. Measure at M1 and publish the number; do not hide it.
+- Large installer and memory use. The first M1 unsigned NSIS build is 115.9 MiB (121,556,431 bytes) and unpacks to 359.1 MiB (376,500,216 bytes). Runtime memory was not measured. Publish these numbers rather than hiding them; revisit if size becomes a hard requirement.
 - Chromium security updates create a monthly-ish maintenance burden. Pin an Electron major, track security releases, and automate dependency updates with review.
 - Electron has no turnkey UIA API. UIA is deferred behind G6; prototype a native helper and measure reliability before promising any desktop automation.
 - Playwright's Electron automation is experimental. Keep core integration tests independent of it so an upstream break does not block the suite.
@@ -118,11 +118,13 @@ This changes the provisional "Windows 10/11" wording in the master prompt and re
 
 For v1, ship an unsigned classic installer, SHA256 checksums and a README that explains the expected SmartScreen warning and how to verify the hash. Do not ship MSIX. The repository is private and `UNLICENSED`, so it does not qualify for SignPath Foundation without an explicit open-source decision. Paid OV/EV certificates and Azure Artifact Signing are G4 and, for an individual in Kenya, Azure Artifact Signing public trust is unavailable. Revisit at M10.
 
-## G1 questions for the owner
+## G1 decision
 
-1. Approve Electron + TypeScript as the v1 stack?
-2. Approve Windows 11 25H2/26H2 x64 as the supported baseline, with Windows 10 LTSC/Enterprise best-effort and ARM64 after x64?
-3. Approve the isolated `companion/` layout so the legacy WhatsApp bot and pm2 setup remain untouched?
-4. Confirm that v1 starts unsigned with SHA256 and a documented SmartScreen warning, with signing deferred to M10 and any spend deferred to G4?
+The owner approved all four questions on 2026-10-25:
 
-If the answer to question 1 is no, the fallback order is Tauri 2, then .NET. Each requires a revised ADR because the module boundaries and native adapters change.
+1. Electron + TypeScript is the v1 stack.
+2. Windows 11 25H2/26H2 x64 is the supported baseline, with Windows 10 LTSC/Enterprise best-effort and ARM64 after x64.
+3. The companion lives in the isolated `companion/` layout, leaving the legacy WhatsApp bot and pm2 setup untouched.
+4. v1 starts unsigned with SHA256 and a documented SmartScreen warning; signing is deferred to M10 and any spend to G4.
+
+If a future owner reverses question 1, the fallback order is Tauri 2, then .NET. Either requires a revised ADR because the module boundaries and native adapters change.

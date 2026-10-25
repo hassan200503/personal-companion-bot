@@ -4,7 +4,7 @@ Last updated: 2026-10-25
 Source of truth: `docs/MASTER_PROMPT.md`
 Status vocabulary is fixed by master prompt section 16. A requirement is never marked `IMPLEMENTED AND TESTED` without a recorded passing run. For `NOT IMPLEMENTED` rows, the evidence is the absence of companion code plus `docs/PROJECT_STATE.md`; the milestone column shows where the requirement is expected to land.
 
-Current position: M0 is in progress. The stack ADR is drafted and awaiting owner approval at G1. No companion code, build, test harness or installer exists.
+Current position: M1 scaffold is implemented and locally verified; the commit is pending. G1 approved Electron + TypeScript, the Windows 11 25H2/26H2 x64 baseline, the isolated `companion/` layout and an unsigned v1 with SHA256.
 
 ## M0 and project governance
 
@@ -13,9 +13,23 @@ Current position: M0 is in progress. The stack ADR is drafted and awaiting owner
 | M0-01 | Inspect the repository and record language, frameworks, dependencies, tests and conventions | M0 | IMPLEMENTED BUT NOT FULLY VERIFIED | `VERIFICATION_LOG.md` R-01 to R-09 |
 | M0-02 | Create `PROJECT_STATE.md`, `REQUIREMENTS_MATRIX.md`, `VERIFICATION_LOG.md`, `DECISIONS/` | M0 | IMPLEMENTED BUT NOT FULLY VERIFIED | Files exist; owner review pending |
 | M0-03 | Verify every Section 4 UNVERIFIED item from official sources and record URL/date | M0 | PARTIALLY IMPLEMENTED | `VERIFICATION_LOG.md` sections 2-4; open items in section 6 |
-| M0-04 | Write the stack ADR comparing Tauri/Rust, Electron/TypeScript and .NET/WPF or WinUI against the required criteria | M0 | PARTIALLY IMPLEMENTED | `DECISIONS/ADR-0001-stack.md`; drafted, not approved |
-| M0-05 | Obtain owner approval of the stack ADR at G1 | M0 | NOT IMPLEMENTED | Awaiting owner decision |
-| M0-06 | Record the minimum supported Windows version and install footprint | M0/M10 | PARTIALLY IMPLEMENTED | Minimum OS recommended in ADR; footprint deferred until M1/M10 |
+| M0-04 | Write the stack ADR comparing Tauri/Rust, Electron/TypeScript and .NET/WPF or WinUI against the required criteria | M0 | IMPLEMENTED BUT NOT FULLY VERIFIED | `DECISIONS/ADR-0001-stack.md`; accepted at G1 |
+| M0-05 | Obtain owner approval of the stack ADR at G1 | M0 | IMPLEMENTED BUT NOT FULLY VERIFIED | Owner approved all four G1 questions on 2026-10-25 |
+| M0-06 | Record the minimum supported Windows version and install footprint | M0/M10 | PARTIALLY IMPLEMENTED | Minimum OS recommended in ADR; M1 installer measured; clean install still pending |
+
+## M1 scaffold
+
+| ID | Requirement | Milestone | Status | Evidence / note |
+| --- | --- | --- | --- | --- |
+| M1-01 | Create the companion workspace, TypeScript project and package boundaries | M1 | IMPLEMENTED BUT NOT FULLY VERIFIED | `companion/package.json`, `apps/desktop`, `packages/core`; commit pending |
+| M1-02 | Electron main process, sandboxed preload bridge and React renderer | M1 | IMPLEMENTED BUT NOT FULLY VERIFIED | Manual `npm start` logged `desktop window created`; unpacked `Companion.exe` launched with 4 responding processes; no E2E or UI interaction test |
+| M1-03 | CI workflow for the companion | M1 | IMPLEMENTED BUT NOT FULLY VERIFIED | `.github/workflows/companion-ci.yml`; has not run on GitHub |
+| M1-04 | Lint, typecheck, test harness and production build | M1 | IMPLEMENTED AND TESTED | `npm run verify` passed: ESLint, tsc, 2 files / 9 tests, build |
+| M1-05 | Logging with secret redaction | M1 | IMPLEMENTED AND TESTED | `packages/core/src/logger.ts`; 3 logger tests pass; key-name redaction only |
+| M1-06 | Versioned config schema | M1 | IMPLEMENTED AND TESTED | `packages/core/src/config.ts`; 5 config tests pass |
+| M1-07 | Installer generation and footprint measurement | M1 | IMPLEMENTED BUT NOT FULLY VERIFIED | Unsigned NSIS built: 115.9 MiB installer, 359.1 MiB unpacked; not installed |
+| M1-08 | M1 milestone report | M1 | IMPLEMENTED BUT NOT FULLY VERIFIED | `docs/MILESTONES/M1.md`; commit pending |
+
 
 ## Product scope
 
@@ -39,22 +53,22 @@ Current position: M0 is in progress. The stack ADR is drafted and awaiting owner
 
 | ID | Requirement | Milestone | Status | Evidence / note |
 | --- | --- | --- | --- | --- |
-| ARC-01 | A local agent process owns memory, gateway, tools, permissions and scheduler; the UI talks to it over an authenticated local channel | M1 | NOT IMPLEMENTED | ADR specifies Electron main + validated IPC with a per-window session token |
-| ARC-02 | Core domain logic is isolated behind typed contracts so Android v2 can reuse it | M1 | NOT IMPLEMENTED | ADR specifies `packages/core` |
-| ARC-03 | Stable modules: shell, onboarding, profile, conversation, memory/retrieval, personalization, gateway, tool registry, permission engine, Windows adapters, workflow executor, scheduler, notifications, security/encryption, observability, import/export/backup, update management | M1-M10 | NOT IMPLEMENTED | No code |
+| ARC-01 | A local agent process owns memory, gateway, tools, permissions and scheduler; the UI talks to it over an authenticated local channel | M1 | PARTIALLY IMPLEMENTED | Electron main + validated IPC with a per-window token exist; memory, gateway, tools and scheduler do not |
+| ARC-02 | Core domain logic is isolated behind typed contracts so Android v2 can reuse it | M1 | PARTIALLY IMPLEMENTED | `packages/core` exists with config, logger and provider contracts; domain modules are not implemented |
+| ARC-03 | Stable modules: shell, onboarding, profile, conversation, memory/retrieval, personalization, gateway, tool registry, permission engine, Windows adapters, workflow executor, scheduler, notifications, security/encryption, observability, import/export/backup, update management | M1-M10 | PARTIALLY IMPLEMENTED | Shell, core package, config and logger exist; most modules are absent |
 | ARC-04 | SQLite with encryption evaluated (SQLCipher or equivalent), FTS5 lexical search and versioned migrations from day one | M2 | NOT IMPLEMENTED | G2 decision; no schema yet |
 | ARC-05 | Conversations, memories, credentials, configuration and audit records live in separate stores or clearly separated tables | M2 | NOT IMPLEMENTED | No schema |
 | ARC-06 | Retrieval combines lexical search, metadata, recency, relevance and access checks; embeddings only if a measured benefit justifies a hosted provider | M6 | NOT IMPLEMENTED | No retrieval |
 | ARC-07 | No Kubernetes, queues, microservices or hosted backend | M1-M11 | NOT IMPLEMENTED | Constraint; no infrastructure chosen |
-| ARC-08 | Stack ADR covers installer size, tray/background, UIA, credential storage, installer generation, build/test tooling, solo maintainability, ARM64 | M0 | PARTIALLY IMPLEMENTED | `ADR-0001-stack.md` |
+| ARC-08 | Stack ADR covers installer size, tray/background, UIA, credential storage, installer generation, build/test tooling, solo maintainability, ARM64 | M0 | IMPLEMENTED BUT NOT FULLY VERIFIED | `ADR-0001-stack.md`; accepted at G1 |
 | ARC-09 | Reserve Android findings for v2 in `docs/android-v2-notes.md`; do not build Android in v1 | M0 | IMPLEMENTED BUT NOT FULLY VERIFIED | Document exists; findings are SECONDARY until re-verified |
 
 ## Provider gateway
 
 | ID | Requirement | Milestone | Status | Evidence / note |
 | --- | --- | --- | --- | --- |
-| GW-01 | `ChatProvider` contract with `capabilities()`, `healthCheck()`, `complete(request, signal)` and `stream(request, signal)` | M3 | NOT IMPLEMENTED | No code |
-| GW-02 | Typed requests/responses, the full error taxonomy, cancellation on every call and usage reporting | M3 | NOT IMPLEMENTED | No code |
+| GW-01 | `ChatProvider` contract with `capabilities()`, `healthCheck()`, `complete(request, signal)` and `stream(request, signal)` | M3 | PARTIALLY IMPLEMENTED | Contract types exist in `packages/core/src/contracts/provider.ts`; no adapter or runtime |
+| GW-02 | Typed requests/responses, the full error taxonomy, cancellation on every call and usage reporting | M3 | PARTIALLY IMPLEMENTED | Request/response/error types exist; cancellation and usage runtime are absent |
 | GW-03 | Versioned provider catalog as a data file with id, name, signup/key URLs, key-prefix hint, needs, base URL, compatibility, data-policy URL, privacy note, guide, models and `lastVerified` | M3 | NOT IMPLEMENTED | Research exists in `VERIFICATION_LOG.md`; catalog not built |
 | GW-04 | Quota ledger per provider and model built from response headers, 429s and failures; published numbers are hints only | M3 | NOT IMPLEMENTED | No code |
 | GW-05 | Rate-limit handling: honour `Retry-After`, exponential backoff with jitter, retry cap, per-provider-model circuit breaker, failover, no rapid loops | M3 | NOT IMPLEMENTED | No code |
