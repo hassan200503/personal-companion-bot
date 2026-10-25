@@ -21,14 +21,14 @@ Current position: M1 scaffold is implemented and locally verified; the commit is
 
 | ID | Requirement | Milestone | Status | Evidence / note |
 | --- | --- | --- | --- | --- |
-| M1-01 | Create the companion workspace, TypeScript project and package boundaries | M1 | IMPLEMENTED BUT NOT FULLY VERIFIED | `companion/package.json`, `apps/desktop`, `packages/core`; commit pending |
+| M1-01 | Create the companion workspace, TypeScript project and package boundaries | M1 | IMPLEMENTED BUT NOT FULLY VERIFIED | `companion/package.json`, `apps/desktop`, `packages/core`; committed in `bb0815b`; GitHub CI not run |
 | M1-02 | Electron main process, sandboxed preload bridge and React renderer | M1 | IMPLEMENTED BUT NOT FULLY VERIFIED | Manual `npm start` logged `desktop window created`; unpacked `Companion.exe` launched with 4 responding processes; no E2E or UI interaction test |
 | M1-03 | CI workflow for the companion | M1 | IMPLEMENTED BUT NOT FULLY VERIFIED | `.github/workflows/companion-ci.yml`; has not run on GitHub |
 | M1-04 | Lint, typecheck, test harness and production build | M1 | IMPLEMENTED AND TESTED | `npm run verify` passed: ESLint, tsc, 2 files / 9 tests, build |
 | M1-05 | Logging with secret redaction | M1 | IMPLEMENTED AND TESTED | `packages/core/src/logger.ts`; 3 logger tests pass; key-name redaction only |
 | M1-06 | Versioned config schema | M1 | IMPLEMENTED AND TESTED | `packages/core/src/config.ts`; 5 config tests pass |
 | M1-07 | Installer generation and footprint measurement | M1 | IMPLEMENTED BUT NOT FULLY VERIFIED | Unsigned NSIS built: 115.9 MiB installer, 359.1 MiB unpacked; not installed |
-| M1-08 | M1 milestone report | M1 | IMPLEMENTED BUT NOT FULLY VERIFIED | `docs/MILESTONES/M1.md`; commit pending |
+| M1-08 | M1 milestone report | M1 | IMPLEMENTED BUT NOT FULLY VERIFIED | `docs/MILESTONES/M1.md`; committed in `bb0815b` |
 
 
 ## Product scope

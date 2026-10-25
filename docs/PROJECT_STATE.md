@@ -2,8 +2,8 @@
 
 Last updated: 2026-10-25
 Current milestone: M1, Scaffold
-Current task: commit the M1 scaffold and record the milestone report; then prepare the G2 encryption proposal
-Status: M1 scaffold implemented and locally verified; commit pending
+Current task: record the M1 commit, then prepare the G2 encryption proposal
+Status: M1 scaffold committed locally as `bb0815b`; local verification green; GitHub CI and clean-machine install remain unverified
 
 ## What this project is
 
@@ -27,11 +27,12 @@ The existing WhatsApp bot is legacy. It must keep working. Do not modify or dele
 - Launched the app with `npm start`: the main process logged `desktop window created`; the command was stopped by the tool timeout because the window stays open.
 - Built the unsigned NSIS installer: 115.9 MiB, unpacked 359.1 MiB across 73 files, SHA256 `CEE02741491F0BF7253E05879BC85E49FE2BBAED228FCC76A9228EC451165CDB`, Authenticode `NotSigned`.
 - Wrote the M1 milestone report at `docs/MILESTONES/M1.md`.
+- Committed the M1 scaffold and report locally as `bb0815b` (`M1: scaffold Electron companion with config, logger and CI`). Nothing has been pushed.
 
 ## In progress
 
-- M1 is implemented and locally verified. The scaffold and M1 report still need a local commit.
-- CI is written but has not run on GitHub because the repository has not been pushed. The installer was built but not installed.
+- M1 scaffold and report are committed as `bb0815b`. CI execution on GitHub and a clean-machine install remain open.
+- The G2 encryption proposal has not been written yet.
 
 ## Blocked
 
@@ -49,7 +50,7 @@ The existing WhatsApp bot is legacy. It must keep working. Do not modify or dele
 
 ## Next three tasks
 
-1. Commit the M1 scaffold and report locally; confirm the working tree is clean and record the commit hash.
+1. Record the M1 commit hash and keep CI execution and clean-machine install as open verification items.
 2. Draft the G2 proposal: encryption approach, key hierarchy, recovery and credential-storage adapter. Stop at G2 for owner approval before writing storage code.
 3. After G2 approval: M2 migrations, encrypted persistence, credential adapter, backup and restore, with tests.
 
@@ -106,4 +107,4 @@ npx electron --version
 
 ## Handover note
 
-Read `docs/MASTER_PROMPT.md` completely, then this file, then the ADR and `docs/MILESTONES/M1.md`. G1 is approved and the M1 scaffold is implemented; commit it locally, then prepare the G2 proposal and stop for owner approval before writing storage code. The legacy WhatsApp bot is separate and must remain untouched. The M0 documents are committed locally as `34f164a` and `14871e8`; do not push without owner approval. No companion secrets, provider accounts or spending exist. The M1 installer is unsigned and has not been installed.
+Read `docs/MASTER_PROMPT.md` completely, then this file, then the ADR and `docs/MILESTONES/M1.md`. G1 is approved and the M1 scaffold is committed as `bb0815b`; local verification is green. Prepare the G2 proposal and stop for owner approval before writing storage code. The legacy WhatsApp bot is separate and must remain untouched. The M0 documents are committed locally as `34f164a` and `14871e8`; do not push without owner approval. No companion secrets, provider accounts or spending exist. The M1 installer is unsigned and has not been installed.
