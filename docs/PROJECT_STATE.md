@@ -3,7 +3,7 @@
 Last updated: 2026-10-25
 Current milestone: M2, Storage and secrets (G2 approved; all eight prototype gates passed)
 Current task: implement production encrypted persistence, migrations and their tests; no production storage code exists yet
-Status: G2 approved by the owner on 2026-10-25; all eight prototype gates passed on Windows with Electron 45 and Node 22; final package rebuilt with only win32-x64 native binaries; M1 scaffold committed as `bb0815b`; GitHub CI and clean-machine install remain unverified
+Status: G2 approved by the owner on 2026-10-25; all eight prototype gates passed on Windows with Electron 45 and Node 22; gate evidence committed as `cbd31b5`; final package rebuilt with only win32-x64 native binaries; M1 scaffold committed as `bb0815b`; GitHub CI and clean-machine install remain unverified
 
 ## What this project is
 
@@ -41,6 +41,7 @@ The existing WhatsApp bot is legacy. It must keep working. Do not modify or dele
 - Electron gate: async `safeStorage` was available; a 74-byte DPAPI-wrapped key was unwrapped by a sequential second process; keytar set/get/list/delete passed; a packaged Credential Manager round trip passed.
 - Packaging gate: electron-builder packaged only the win32-x64 `.node` files; the all-prebuild build shrank from 412,831,026 to 378,963,727 unpacked bytes after pruning. The final unsigned NSIS installer is 122,573,738 bytes (116.9 MiB), SHA256 `F24B0C22EA23E24ED8ACD0653FA31666D71BF6F357EE48FC9601BF5383E5D577`, `NotSigned`; the final unpacked app is 379,071,247 bytes across 103 files.
 - Removed the temporary packaged probe from the production main process after capturing evidence. `npm run verify` passed after cleanup: ESLint clean, TypeScript clean, 2 test files / 9 tests, main bundle 743.4 KB. A normal packaged launch produced 4 responding processes and left none running.
+- Committed the G2 gate evidence, native dependencies, packaging configuration and documentation locally as `cbd31b5` (`G2: pass storage prototypes and record gate evidence`). Nothing has been pushed.
 
 ## In progress
 
@@ -122,4 +123,4 @@ npx electron --version
 
 ## Handover note
 
-Read `docs/MASTER_PROMPT.md` completely, then this file, then `docs/DECISIONS/ADR-0002-storage-encryption.md`, `docs/THREAT_MODEL.md` and `docs/MILESTONES/M1.md`. G1 and G2 are approved, and all eight G2 prototype gates passed on 2026-10-25; evidence is in `docs/VERIFICATION_LOG.md` section 9. The accepted design is in ADR-0002. Implement production M2 storage next; the temporary gate probes are not production code. The M1 scaffold is committed as `bb0815b`, with the state record at `a35d58d`. The current unsigned package is SHA256 `F24B0C22EA23E24ED8ACD0653FA31666D71BF6F357EE48FC9601BF5383E5D577`. The legacy WhatsApp bot is separate and must remain untouched. The M0 documents are committed locally as `34f164a` and `14871e8`; do not push without owner approval. No companion secrets, provider accounts or spending exist.
+Read `docs/MASTER_PROMPT.md` completely, then this file, then `docs/DECISIONS/ADR-0002-storage-encryption.md`, `docs/THREAT_MODEL.md` and `docs/MILESTONES/M1.md`. G1 and G2 are approved, and all eight G2 prototype gates passed on 2026-10-25; evidence is in `docs/VERIFICATION_LOG.md` section 9 and committed as `cbd31b5`. The accepted design is in ADR-0002. Implement production M2 storage next; the temporary gate probes are not production code. The M1 scaffold is committed as `bb0815b`, with the state record at `a35d58d`. The current unsigned package is SHA256 `F24B0C22EA23E24ED8ACD0653FA31666D71BF6F357EE48FC9601BF5383E5D577`. The legacy WhatsApp bot is separate and must remain untouched. The M0 documents are committed locally as `34f164a` and `14871e8`; do not push without owner approval. No companion secrets, provider accounts or spending exist.

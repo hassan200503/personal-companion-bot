@@ -218,3 +218,5 @@ The Electron keytar and restart probe produced:
 The first line is the create-and-keytar pass; `processRestartVerified` is false there by design because the restart check runs in a sequential second process. A concurrent second child was invalid because it shared the same Electron userData and GPU cache, so it is not counted as a failure.
 
 Remaining verification limits: the 4096-byte page size is recorded but production code must pin it, the installer has not been installed on a clean machine, CI has not run on GitHub, and no production storage, migration, credential, backup or restore code exists yet.
+
+The gate evidence and packaging configuration were committed locally as `cbd31b5` (`G2: pass storage prototypes and record gate evidence`). Nothing has been pushed.

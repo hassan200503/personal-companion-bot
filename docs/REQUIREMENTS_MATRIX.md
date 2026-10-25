@@ -4,7 +4,7 @@ Last updated: 2026-10-25
 Source of truth: `docs/MASTER_PROMPT.md`
 Status vocabulary is fixed by master prompt section 16. A requirement is never marked `IMPLEMENTED AND TESTED` without a recorded passing run. For `NOT IMPLEMENTED` rows, the evidence is the absence of companion code plus `docs/PROJECT_STATE.md`; the milestone column shows where the requirement is expected to land.
 
-Current position: M1 scaffold committed locally as `bb0815b` with state record `a35d58d`. G2 approved the storage design on 2026-10-25 and all eight prototype gates passed; production storage code has not been written. The current unsigned package is SHA256 `F24B0C22EA23E24ED8ACD0653FA31666D71BF6F357EE48FC9601BF5383E5D577`. GitHub CI and clean-machine install remain open.
+Current position: M1 scaffold committed locally as `bb0815b` with state record `a35d58d`. G2 approved the storage design on 2026-10-25 and all eight prototype gates passed; gate evidence committed as `cbd31b5`. Production storage code has not been written. The current unsigned package is SHA256 `F24B0C22EA23E24ED8ACD0653FA31666D71BF6F357EE48FC9601BF5383E5D577`. GitHub CI and clean-machine install remain open.
 
 ## M0 and project governance
 
