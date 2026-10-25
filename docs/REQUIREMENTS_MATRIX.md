@@ -4,7 +4,7 @@ Last updated: 2026-10-25
 Source of truth: `docs/MASTER_PROMPT.md`
 Status vocabulary is fixed by master prompt section 16. A requirement is never marked `IMPLEMENTED AND TESTED` without a recorded passing run. For `NOT IMPLEMENTED` rows, the evidence is the absence of companion code plus `docs/PROJECT_STATE.md`; the milestone column shows where the requirement is expected to land.
 
-Current position: M1 scaffold committed locally as `bb0815b` with state record `a35d58d`; local verification green. The G2 proposal is drafted in `docs/DECISIONS/ADR-0002-storage-encryption.md` and awaits owner approval; no storage code exists. GitHub CI and clean-machine install remain open.
+Current position: M1 scaffold committed locally as `bb0815b` with state record `a35d58d`; local verification green. The G2 proposal is committed as `57aee52` in `docs/DECISIONS/ADR-0002-storage-encryption.md` and awaits owner approval; no storage code exists. GitHub CI and clean-machine install remain open.
 
 ## M0 and project governance
 
