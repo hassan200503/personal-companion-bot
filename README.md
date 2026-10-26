@@ -1,4 +1,4 @@
-# WhatsApp Persona Bot
+# Personal companion Bot ⚙️
 
 Auto-replies to your WhatsApp messages in your own voice while you're offline,
 learns your writing style over time from messages you actually send, and can
