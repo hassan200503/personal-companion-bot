@@ -143,12 +143,30 @@ DROP TABLE settings;
 DROP TABLE audit_log;
 `;
 
+const addOnboardingStateUp = `
+CREATE TABLE onboarding_state (
+  id INTEGER PRIMARY KEY CHECK (id = 1),
+  state TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+`;
+
+const addOnboardingStateDown = `
+DROP TABLE onboarding_state;
+`;
+
 export const migrationList: readonly Migration[] = [
   {
     version: 1,
     name: "initial-schema",
     up: initialSchemaUp,
     down: initialSchemaDown
+  },
+  {
+    version: 2,
+    name: "add-onboarding-state",
+    up: addOnboardingStateUp,
+    down: addOnboardingStateDown
   }
 ];
 
