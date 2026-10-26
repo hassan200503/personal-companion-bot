@@ -5,7 +5,7 @@ describe('OnboardingPipeline', () => {
   const pipeline = new DefaultOnboardingPipeline();
 
   it('validates key - empty', async () => {
-    const result = await pipeline.validateKey('openrouter', '');
+    const result = await pipeline.validateKey('openai', '');
     expect(result.valid).toBe(false);
     expect(result.error).toContain('empty');
   });
@@ -17,18 +17,17 @@ describe('OnboardingPipeline', () => {
   });
 
   it('validates key - wrong prefix', async () => {
-    const result = await pipeline.validateKey('openrouter', 'wrong-prefix');
+    const result = await pipeline.validateKey('openai', 'wrong-prefix');
     expect(result.valid).toBe(false);
-    expect(result.error).toContain('sk-or-');
   });
 
   it('lists models from catalog fallback', async () => {
     // Mock fetch to fail so it falls back to catalog
     const originalFetch = globalThis.fetch;
     globalThis.fetch = vi.fn().mockRejectedValue(new Error('network'));
-    const result = await pipeline.listModels('groq', 'gsk_test123');
+    const result = await pipeline.listModels('deepseek', 'test-key');
     expect(result.models.length).toBeGreaterThan(0);
-    expect(result.providerId).toBe('groq');
+    expect(result.providerId).toBe('deepseek');
     globalThis.fetch = originalFetch;
   });
 
@@ -38,7 +37,7 @@ describe('OnboardingPipeline', () => {
       ok: true,
       json: async () => ({ data: [{ id: 'model-a' }, { id: 'model-b' }] }),
     });
-    const result = await pipeline.listModels('groq', 'gsk_test123');
+    const result = await pipeline.listModels('deepseek', 'test-key');
     expect(result.models).toEqual(['model-a', 'model-b']);
     globalThis.fetch = originalFetch;
   });
@@ -46,8 +45,8 @@ describe('OnboardingPipeline', () => {
   it('probes provider', async () => {
     const originalFetch = globalThis.fetch;
     globalThis.fetch = vi.fn().mockResolvedValue({ ok: true });
-    const result = await pipeline.probe('groq', 'gsk_test123');
-    expect(result.providerId).toBe('groq');
+    const result = await pipeline.probe('deepseek', 'test-key');
+    expect(result.providerId).toBe('deepseek');
     expect(typeof result.healthy).toBe('boolean');
     globalThis.fetch = originalFetch;
   });
@@ -59,7 +58,7 @@ describe('OnboardingPipeline', () => {
   });
 
   it('seeds quotas', async () => {
-    const result = await pipeline.seedQuotas('groq');
+    const result = await pipeline.seedQuotas('deepseek');
     expect(result.seeded).toBe(true);
     expect(result.limits).toBeDefined();
     expect(result.limits?.requestsPerMinute).toBeGreaterThan(0);

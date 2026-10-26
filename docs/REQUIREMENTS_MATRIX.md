@@ -221,3 +221,5 @@ Current position: M2 complete and committed as `b188202` with 28 tests passing (
 | PROV-04 | Allow a user to add a favourite provider/model | IMPLEMENTED | Custom HTTPS OpenAI-compatible provider form and authenticated IPC; endpoint/model metadata is non-secret, API key uses Credential Manager |
 | PROV-05 | Avoid claiming volatile free-tier quotas as fixed facts | IMPLEMENTED | Catalog labels are warnings; exact limits are learned from errors/headers where available and official research is recorded as date-bound |
 | PROV-06 | Keep provider and API-key setup user-controlled | IMPLEMENTED | Browser links and pasted key flow; no account creation, CAPTCHA or signup automation |
+| PROV-07 | Active defaults are Gemini, DeepSeek, OpenAI/ChatGPT, Anthropic/Claude and Perplexity | IMPLEMENTED | Active catalog and UI provider cards contain only these five defaults |
+| PROV-08 | Allow creation of a provider outside the defaults | IMPLEMENTED | `Create new provider` button reveals a tested HTTPS OpenAI-compatible endpoint form |

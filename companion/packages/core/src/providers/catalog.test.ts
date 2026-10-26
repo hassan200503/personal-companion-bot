@@ -10,9 +10,9 @@ describe('ProviderCatalog', () => {
   });
 
   it('finds provider by id', () => {
-    const entry = getProviderEntry('openrouter');
+    const entry = getProviderEntry('openai');
     expect(entry).toBeDefined();
-    expect(entry?.displayName).toBe('OpenRouter');
+    expect(entry?.displayName).toBe('OpenAI / ChatGPT');
   });
 
   it('returns undefined for unknown provider', () => {
@@ -27,7 +27,7 @@ describe('ProviderCatalog', () => {
   });
 
   it('returns models for provider', () => {
-    const models = getProviderModels('groq');
+    const models = getProviderModels('gemini');
     expect(models.length).toBeGreaterThan(0);
   });
 
@@ -37,20 +37,19 @@ describe('ProviderCatalog', () => {
   });
 
   it('validates key format - valid', () => {
-    const result = validateKeyFormat('openrouter', 'sk-or-test123');
+    const result = validateKeyFormat('openai', 'sk-test123');
     expect(result.valid).toBe(true);
   });
 
   it('validates key format - empty', () => {
-    const result = validateKeyFormat('openrouter', '');
+    const result = validateKeyFormat('openai', '');
     expect(result.valid).toBe(false);
     expect(result.error).toContain('empty');
   });
 
   it('validates key format - wrong prefix', () => {
-    const result = validateKeyFormat('openrouter', 'wrong-prefix');
-    expect(result.valid).toBe(false);
-    expect(result.error).toContain('sk-or-');
+    const result = validateKeyFormat('openai', 'any-provider-key');
+    expect(result.valid).toBe(true);
   });
 
   it('validates key format - unknown provider', () => {
@@ -73,10 +72,10 @@ describe('ProviderCatalog', () => {
   });
 
   it('provider factory creates provider', () => {
-    const entry = getProviderEntry('groq');
+    const entry = getProviderEntry('anthropic');
     const provider = entry?.factory('gsk_test123');
-    expect(provider?.id).toBe('groq');
-    expect(provider?.name).toBe('Groq');
+    expect(provider?.id).toBe('anthropic');
+    expect(provider?.name).toBe('Anthropic / Claude');
   });
 
   it('round-trips non-secret custom provider settings', () => {

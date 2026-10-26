@@ -293,6 +293,8 @@ function registerIpc(): void {
         models: entry.models,
         guideSteps: entry.guideSteps,
         privacyNote: entry.privacyNote,
+        pricingNote: entry.pricingNote,
+        freeTier: entry.freeTier,
       }));
     });
 

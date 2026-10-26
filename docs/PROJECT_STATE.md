@@ -2,8 +2,8 @@
 
 Last updated: 2026-10-26
 Current milestone: M11, Hardening (in progress)
-Current task: M4 provider gateway thin slice complete; 180 tests passing
-Status: Provider failover and configurable-provider thin slice complete; lint/typecheck/180 tests/build clean
+Current task: Provider catalog revision complete; 180 tests passing
+Status: Gemini, DeepSeek, OpenAI/ChatGPT, Anthropic/Claude and Perplexity are the active defaults; custom provider creation remains available; lint/typecheck/tests clean
 
 ## What this project is
 
@@ -59,6 +59,9 @@ The existing WhatsApp bot is legacy. It must keep working. Do not modify or dele
 - Official provider research rechecked 2026-10-26: Gemini pricing/free-tier page, Gemini model page, Groq rate-limit page, and Mistral free-mode/API-limit pages. Exact quotas remain account-specific and are not hard-coded.
 - Provider defaults now use Gemini `gemini-2.5-flash-lite`, Groq free developer models, and an OpenRouter model explicitly marked `:free`; free availability remains subject to provider account/region rules.
 - Custom providers require HTTPS and are encoded without the API key in the Credential Manager target name; the API key itself remains in Windows Credential Manager.
+- Active default catalog was revised to exactly Gemini, DeepSeek, OpenAI/ChatGPT, Anthropic/Claude and Perplexity. Groq, OpenRouter, Together AI and Fireworks are no longer exposed by `getProviderCatalog()` or onboarding.
+- Existing removed-provider credentials are left untouched for safety but are ignored by startup registration until the owner removes them.
+- The setup UI now has a `Create new provider` button that reveals the custom HTTPS OpenAI-compatible provider form.
 
 ## Blocked
 

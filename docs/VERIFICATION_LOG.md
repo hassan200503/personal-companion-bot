@@ -232,3 +232,12 @@ The gate evidence and packaging configuration were committed locally as `cbd31b5
 | V-12 | Provider implementation review | PASS: Gemini REST adapter; structured 400/401/402/403/408/429/5xx mapping; provider-specific model selection during fallback; custom HTTPS OpenAI-compatible provider registration |
 
 Important limitation: free-tier availability, regional eligibility and quotas remain provider-account facts and can change. The app does not promise unlimited free use. Full OS control, voice and UI automation remain behind the documented permission/risk gates; the current build does not claim to control everything.
+
+## 11. Provider catalog revision evidence (2026-10-26)
+
+| ID | Evidence | Result |
+| --- | --- | --- |
+| V-13 | Active `PROVIDER_CATALOG` and `getProviderCatalog()` inspection | PASS: exactly Gemini, DeepSeek, OpenAI/ChatGPT, Anthropic/Claude and Perplexity are exposed; Groq, OpenRouter, Together and Fireworks are not active defaults |
+| V-14 | Provider implementation inspection | PASS: Gemini native REST, DeepSeek/OpenAI/Perplexity OpenAI-compatible APIs, and Anthropic Messages API are represented with separate endpoints and request formats |
+| V-15 | `npm.cmd run lint`, `npm.cmd run typecheck`, `npm.cmd run test -- --run` | PASS: 180 tests passed |
+| V-16 | Official API references | OpenAI Chat Completions: `https://platform.openai.com/docs/api-reference/chat`; DeepSeek Chat Completions: `https://api-docs.deepseek.com/api/create-chat-completion/`; Anthropic API docs: `https://docs.anthropic.com/en/api/messages`; Perplexity API docs: `https://docs.perplexity.ai/` |

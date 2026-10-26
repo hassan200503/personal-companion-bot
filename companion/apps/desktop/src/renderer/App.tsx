@@ -13,6 +13,8 @@ type Provider = {
   models: string[];
   guideSteps: string[];
   privacyNote: string;
+  pricingNote?: string;
+  freeTier: boolean;
 };
 
 export default function App() {
@@ -20,7 +22,7 @@ export default function App() {
   const [tab, setTab] = useState<'setup' | 'chat'>('setup');
   const [providers, setProviders] = useState<Provider[]>([]);
   const [stored, setStored] = useState<string[]>([]);
-  const [selectedProvider, setSelectedProvider] = useState('groq');
+  const [selectedProvider, setSelectedProvider] = useState('gemini');
   const [apiKey, setApiKey] = useState('');
   const [validation, setValidation] = useState<any>(null);
   const [busy, setBusy] = useState(false);
@@ -32,6 +34,7 @@ export default function App() {
   const [messages, setMessages] = useState<any[]>([]);
   const [draft, setDraft] = useState('');
   const [custom, setCustom] = useState({ name: '', baseUrl: '', model: '', apiKey: '' });
+  const [showCustomProvider, setShowCustomProvider] = useState(false);
 
   const selected = providers.find((p) => p.id === selectedProvider) || providers[0];
 
@@ -237,8 +240,8 @@ export default function App() {
               <div className="eyebrow">Welcome</div>
               <h1>Set up Companion in minutes</h1>
               <p className="lede">
-                Run a quick system check, choose a privacy preset, then connect a free AI provider.
-                Groq is recommended for fast, free inference.
+                Run a quick system check, choose a privacy preset, then connect one or more AI providers.
+                Companion can switch providers automatically when one is unavailable.
               </p>
               <div className="actions">
                 <button onClick={runOnboarding} disabled={busy}>Run onboarding</button>
@@ -310,9 +313,10 @@ export default function App() {
             <section className="card">
               <div className="section-head">
                 <h3>Add another provider</h3>
-                <span className="muted">OpenAI-compatible HTTPS endpoint</span>
+                <button className="ghost" onClick={() => setShowCustomProvider((value) => !value)}>{showCustomProvider ? 'Hide form' : 'Create new provider'}</button>
               </div>
-              <p className="muted">Use this for a favourite free model or a self-hosted gateway. Companion stores only the API key in Windows Credential Manager and never sends it to the model.</p>
+              {!showCustomProvider ? <p className="muted">Add a provider that is not in the default list using any HTTPS OpenAI-compatible endpoint.</p> : <>
+              <p className="muted">Use this for a favourite model or a self-hosted gateway. Companion stores only the API key in Windows Credential Manager.</p>
               <div className="custom-grid">
                 <input aria-label="Provider name" placeholder="Provider name" value={custom.name} onChange={(e) => setCustom({ ...custom, name: e.target.value })} />
                 <input aria-label="Base URL" placeholder="https://api.example.com/v1" value={custom.baseUrl} onChange={(e) => setCustom({ ...custom, baseUrl: e.target.value })} />
@@ -320,12 +324,13 @@ export default function App() {
                 <input aria-label="Custom provider API key" type="password" placeholder="API key" value={custom.apiKey} onChange={(e) => setCustom({ ...custom, apiKey: e.target.value })} />
               </div>
               <div className="actions"><button onClick={addCustomProvider} disabled={busy || !custom.name || !custom.baseUrl || !custom.model || !custom.apiKey}>Test and add provider</button></div>
+              </>}
             </section>
 
             <section className="card">
               <div className="section-head">
                 <h3>Connect an AI provider</h3>
-                <span className="muted">Free API keys, no card required</span>
+                <span className="muted">Connect one or more providers for automatic failover</span>
               </div>
 
               <div className="provider-grid">
@@ -348,6 +353,7 @@ export default function App() {
                 <div className="provider-detail">
                   <h4>{selected.displayName}</h4>
                   <p className="muted">{selected.privacyNote}</p>
+                  <p className="muted">{selected.pricingNote}</p>
 
                   <div className="link-row">
                     <button className="ghost" onClick={() => openLink(selected.signupUrl)}>Create account</button>

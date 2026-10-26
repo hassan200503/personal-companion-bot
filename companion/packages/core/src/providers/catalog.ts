@@ -11,7 +11,7 @@ import { ProviderError } from './contracts.js';
 // Catalog entries
 // -------------------------------------------------------------------
 
-export const PROVIDER_CATALOG: ProviderCatalogEntry[] = [
+const RETIRED_PROVIDER_CATALOG: ProviderCatalogEntry[] = [
   {
     id: 'gemini',
     displayName: 'Google Gemini',
@@ -150,6 +150,62 @@ export const PROVIDER_CATALOG: ProviderCatalogEntry[] = [
     factory: (apiKey: string) => createOpenAiCompatibleProvider('fireworks', 'Fireworks AI', apiKey, 'https://api.fireworks.ai/inference/v1'),
   },
 ];
+
+/** Default first-party catalog. Retired providers above are intentionally not exposed to onboarding. */
+export const PROVIDER_CATALOG: ProviderCatalogEntry[] = [
+  {
+    id: 'gemini', displayName: 'Google Gemini', onboardingMode: 'assisted',
+    signupUrl: 'https://aistudio.google.com/app/apikey', keyUrl: 'https://aistudio.google.com/app/apikey',
+    needsPhone: false, needsCard: false, regionNotes: 'Free-tier eligibility is account and region dependent',
+    baseUrl: 'https://generativelanguage.googleapis.com', openAiCompatible: false,
+    dataPolicyUrl: 'https://ai.google.dev/gemini-api/terms',
+    privacyNote: 'Google states that free-tier API content may be used to improve products; review current terms before connecting.',
+    pricingNote: 'Free tier availability and limits can change; Companion does not assume a fixed quota.', freeTier: true,
+    guideSteps: ['Open Google AI Studio and create an API key', 'Paste it into Companion; it is stored in Windows Credential Manager', 'Companion tests the key before saving it'],
+    models: ['gemini-2.5-flash-lite'], lastVerified: '2026-10-26', factory: (key) => createGeminiProvider(key),
+  },
+  {
+    id: 'deepseek', displayName: 'DeepSeek', onboardingMode: 'assisted',
+    signupUrl: 'https://platform.deepseek.com/sign_up', keyUrl: 'https://platform.deepseek.com/api_keys',
+    needsPhone: false, needsCard: false, regionNotes: 'Account and regional availability apply',
+    baseUrl: 'https://api.deepseek.com', openAiCompatible: true,
+    dataPolicyUrl: 'https://cdn.deepseek.com/policies/en-US/deepseek-privacy-policy.html',
+    privacyNote: 'Review DeepSeek retention and training terms before sending private content.',
+    pricingNote: 'API usage is not assumed free; use an account with available credits or a current allowance.', freeTier: false,
+    guideSteps: ['Create or sign in to DeepSeek Platform', 'Create an API key', 'Paste it into Companion; it is stored in Windows Credential Manager'],
+    models: ['deepseek-v4-flash'], lastVerified: '2026-10-26', factory: (key) => createOpenAiCompatibleProvider('deepseek', 'DeepSeek', key, 'https://api.deepseek.com'),
+  },
+  {
+    id: 'openai', displayName: 'OpenAI / ChatGPT', onboardingMode: 'assisted',
+    signupUrl: 'https://platform.openai.com/signup', keyUrl: 'https://platform.openai.com/api-keys',
+    needsPhone: false, needsCard: true, regionNotes: 'OpenAI API access and billing are separate from a ChatGPT subscription',
+    baseUrl: 'https://api.openai.com/v1', openAiCompatible: true,
+    dataPolicyUrl: 'https://openai.com/policies/row-privacy-policy/',
+    privacyNote: 'This uses the OpenAI API, not a ChatGPT web session.', pricingNote: 'Paid API service; a ChatGPT subscription does not automatically provide API credits.', freeTier: false,
+    guideSteps: ['Create or sign in to OpenAI Platform', 'Create an API key', 'Paste it into Companion; it is stored in Windows Credential Manager'],
+    models: ['gpt-5.2', 'gpt-5-mini'], lastVerified: '2026-10-26', factory: (key) => createOpenAiCompatibleProvider('openai', 'OpenAI / ChatGPT', key, 'https://api.openai.com/v1'),
+  },
+  {
+    id: 'anthropic', displayName: 'Anthropic / Claude', onboardingMode: 'assisted',
+    signupUrl: 'https://console.anthropic.com/', keyUrl: 'https://console.anthropic.com/settings/keys',
+    needsPhone: false, needsCard: true, regionNotes: 'API access depends on Anthropic account and regional eligibility',
+    baseUrl: 'https://api.anthropic.com', openAiCompatible: false, dataPolicyUrl: 'https://www.anthropic.com/legal/privacy',
+    privacyNote: 'Uses Anthropic’s Messages API directly; separate from the Claude consumer app.', pricingNote: 'Paid API service; no free API quota is assumed.', freeTier: false,
+    guideSteps: ['Create or sign in to Anthropic Console', 'Create a key under API keys', 'Paste it into Companion; it is stored in Windows Credential Manager'],
+    models: ['claude-sonnet-4-6', 'claude-haiku-4-5'], lastVerified: '2026-10-26', factory: (key) => createAnthropicProvider(key),
+  },
+  {
+    id: 'perplexity', displayName: 'Perplexity', onboardingMode: 'assisted',
+    signupUrl: 'https://www.perplexity.ai/', keyUrl: 'https://www.perplexity.ai/settings/api',
+    needsPhone: false, needsCard: true, regionNotes: 'API access depends on Perplexity account settings',
+    baseUrl: 'https://api.perplexity.ai', openAiCompatible: true, dataPolicyUrl: 'https://www.perplexity.ai/hub/legal/privacy-policy',
+    privacyNote: 'Perplexity answers may be web-grounded; review the provider’s current policy.', pricingNote: 'Paid API service; search/model usage may have separate limits.', freeTier: false,
+    guideSteps: ['Open Perplexity API settings', 'Create an API key', 'Paste it into Companion; it is stored in Windows Credential Manager'],
+    models: ['sonar'], lastVerified: '2026-10-26', factory: (key) => createOpenAiCompatibleProvider('perplexity', 'Perplexity', key, 'https://api.perplexity.ai'),
+  },
+];
+
+void RETIRED_PROVIDER_CATALOG;
 // -------------------------------------------------------------------
 // OpenAI-compatible provider factory
 // -------------------------------------------------------------------
@@ -325,6 +381,58 @@ class GeminiProvider implements ChatProvider {
 
 function createGeminiProvider(apiKey: string): ChatProvider {
   return new GeminiProvider(apiKey);
+}
+
+class AnthropicProvider implements ChatProvider {
+  readonly id = 'anthropic';
+  readonly name = 'Anthropic / Claude';
+
+  constructor(private readonly apiKey: string) {}
+
+  async capabilities(): Promise<ProviderCapabilities> {
+    return { streaming: false, maxContextLength: 1_000_000, functionCalling: true, vision: true, jsonMode: false };
+  }
+
+  async healthCheck(): Promise<HealthStatus> {
+    const started = Date.now();
+    try {
+      const response = await this.request({ model: 'claude-haiku-4-5', messages: [{ role: 'user', content: 'Reply with OK.' }], maxTokens: 4 }, AbortSignal.timeout(10000));
+      return { healthy: response.ok, lastCheck: Date.now(), latency: Date.now() - started, error: response.ok ? undefined : classifyHttpError(response.status, `HTTP ${response.status}`, response.headers.get('retry-after')) };
+    } catch (error) {
+      return { healthy: false, lastCheck: Date.now(), latency: Date.now() - started, error: new ProviderError('network', String(error), true) };
+    }
+  }
+
+  async complete(request: ChatCompletionRequest, signal: AbortSignal): Promise<ChatCompletionResponse> {
+    const system = request.messages.find((message) => message.role === 'system')?.content;
+    const messages = request.messages.filter((message) => message.role !== 'system').map((message) => ({ role: message.role === 'assistant' ? 'assistant' : 'user', content: message.content }));
+    const response = await this.request({ model: request.model, max_tokens: request.maxTokens ?? 1024, ...(system ? { system } : {}), messages }, signal);
+    if (!response.ok) throw classifyHttpError(response.status, await response.text(), response.headers.get('retry-after'));
+    const data = await response.json() as { content?: Array<{ type: string; text?: string }>; stop_reason?: string; usage?: { input_tokens?: number; output_tokens?: number } };
+    return {
+      model: request.model,
+      content: data.content?.filter((block) => block.type === 'text').map((block) => block.text ?? '').join('') ?? '',
+      finishReason: data.stop_reason === 'max_tokens' ? 'length' : 'stop',
+      usage: data.usage ? { promptTokens: data.usage.input_tokens ?? 0, completionTokens: data.usage.output_tokens ?? 0, totalTokens: (data.usage.input_tokens ?? 0) + (data.usage.output_tokens ?? 0) } : undefined,
+    };
+  }
+
+  async *stream(request: ChatCompletionRequest, signal: AbortSignal): AsyncIterable<ChatCompletionChunk> {
+    const response = await this.complete(request, signal);
+    yield { delta: response.content, finishReason: response.finishReason };
+  }
+
+  private request(body: Record<string, unknown>, signal: AbortSignal): Promise<Response> {
+    return fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-api-key': this.apiKey, 'anthropic-version': '2023-06-01' },
+      body: JSON.stringify(body), signal,
+    });
+  }
+}
+
+function createAnthropicProvider(apiKey: string): ChatProvider {
+  return new AnthropicProvider(apiKey);
 }
 
 function classifyHttpError(status: number, message: string, retryAfterHeader?: string | null): ProviderError {
