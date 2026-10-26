@@ -149,3 +149,9 @@ export interface OnboardingEngine {
   /** Reset onboarding state (for testing) */
   reset(): Promise<void>;
 }
+
+/** Storage interface for persisting onboarding state */
+export interface OnboardingStorage {
+  loadState(): Promise<OnboardingState>;
+  saveState(state: OnboardingState): Promise<void>;
+}

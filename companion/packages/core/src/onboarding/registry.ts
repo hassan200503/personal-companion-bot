@@ -82,7 +82,7 @@ export class DefaultStepRegistry implements StepRegistry {
       throw new Error(
         'Cycle detected in step dependencies: ' +
           Array.from(inDegree.entries())
-            .filter(([_, degree]) => degree > 0)
+            .filter(([, degree]) => degree > 0)
             .map(([id]) => id)
             .join(', ')
       );

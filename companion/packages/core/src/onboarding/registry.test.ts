@@ -114,11 +114,11 @@ describe('DefaultStepRegistry', () => {
     registry.register(step4);
 
     const ordered = registry.ordered();
-    expect(ordered[0].id).toBe('step1'); // Must be first
-    expect(ordered[3].id).toBe('step4'); // Must be last
+    expect(ordered[0]?.id).toBe('step1'); // Must be first
+    expect(ordered[3]?.id).toBe('step4'); // Must be last
     // step2 and step3 can be in either order
-    expect(['step2', 'step3']).toContain(ordered[1].id);
-    expect(['step2', 'step3']).toContain(ordered[2].id);
+    expect(['step2', 'step3']).toContain(ordered[1]?.id);
+    expect(['step2', 'step3']).toContain(ordered[2]?.id);
   });
 
   it('detects cycles in dependencies', () => {
