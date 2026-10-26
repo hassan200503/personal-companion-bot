@@ -301,7 +301,8 @@ function registerIpc(): void {
     ipcMain.handle(ipcChannels.credentialsList, async (event, suppliedToken: unknown): Promise<string[]> => {
       assertTrustedSender(event, suppliedToken);
       if (!credentialStore) throw new Error('Credential store unavailable');
-      return credentialStore.listProviderIds();
+      const activeIds = new Set(getProviderCatalog().map((entry) => entry.id));
+      return (await credentialStore.listProviderIds()).filter((id) => activeIds.has(id) || Boolean(decodeCustomProviderId(id)));
     });
 
     ipcMain.handle(ipcChannels.credentialsValidate, async (event, suppliedToken: unknown, providerId: string, apiKey: string): Promise<unknown> => {

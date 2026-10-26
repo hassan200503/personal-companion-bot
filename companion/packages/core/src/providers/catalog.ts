@@ -33,7 +33,7 @@ const RETIRED_PROVIDER_CATALOG: ProviderCatalogEntry[] = [
       'Paste the key into Companion; it is stored in Windows Credential Manager',
       'The app tests the key with a tiny request before saving it',
     ],
-    models: ['gemini-2.5-flash-lite'],
+    models: ['gemini-3.5-flash-lite', 'gemini-2.5-flash-lite'],
     lastVerified: '2026-10-26',
     factory: (apiKey: string) => createGeminiProvider(apiKey),
   },
@@ -320,6 +320,7 @@ class OpenAiCompatibleProvider implements ChatProvider {
 class GeminiProvider implements ChatProvider {
   readonly id = 'gemini';
   readonly name = 'Google Gemini';
+  private selectedModel: string | undefined;
 
   constructor(private readonly apiKey: string) {}
 
@@ -330,25 +331,44 @@ class GeminiProvider implements ChatProvider {
   async healthCheck(): Promise<HealthStatus> {
     const started = Date.now();
     try {
-      const response = await fetch(`${this.endpoint('gemini-2.5-flash-lite')}:generateContent?key=${encodeURIComponent(this.apiKey)}`, {
+      const modelsResponse = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${encodeURIComponent(this.apiKey)}`, {
+        headers: { 'x-goog-api-key': this.apiKey },
+        signal: AbortSignal.timeout(10000),
+      });
+      if (!modelsResponse.ok) {
+        const detail = await modelsResponse.text();
+        return { healthy: false, lastCheck: Date.now(), latency: Date.now() - started, error: classifyHttpError(modelsResponse.status, detail, modelsResponse.headers.get('retry-after')) };
+      }
+      const listed = await modelsResponse.json() as { models?: Array<{ name?: string; supportedGenerationMethods?: string[] }> };
+      const candidates = (listed.models ?? [])
+        .filter((model) => model.name && model.supportedGenerationMethods?.includes('generateContent'))
+        .map((model) => model.name!.replace(/^models\//, ''));
+      const preferred = ['gemini-3.5-flash-lite', 'gemini-3.8-flash-lite', 'gemini-2.5-flash-lite', 'gemini-3.8-flash', 'gemini-2.5-flash'];
+      this.selectedModel = preferred.find((model) => candidates.includes(model)) ?? candidates[0];
+      if (!this.selectedModel) {
+        return { healthy: false, lastCheck: Date.now(), latency: Date.now() - started, error: new ProviderError('bad_request', 'This Gemini key exposes no model supporting generateContent.') };
+      }
+      const response = await fetch(`${this.endpoint(this.selectedModel)}:generateContent?key=${encodeURIComponent(this.apiKey)}`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', 'x-goog-api-key': this.apiKey },
         body: JSON.stringify({ contents: [{ role: 'user', parts: [{ text: 'Reply with OK.' }] }], generationConfig: { maxOutputTokens: 4 } }),
         signal: AbortSignal.timeout(10000),
       });
-      return { healthy: response.ok, lastCheck: Date.now(), latency: Date.now() - started, error: response.ok ? undefined : classifyHttpError(response.status, `HTTP ${response.status}`, response.headers.get('retry-after')) };
+      const detail = response.ok ? undefined : await response.text();
+      return { healthy: response.ok, lastCheck: Date.now(), latency: Date.now() - started, error: response.ok ? undefined : classifyHttpError(response.status, detail ?? `HTTP ${response.status}`, response.headers.get('retry-after')) };
     } catch (error) {
       return { healthy: false, lastCheck: Date.now(), latency: Date.now() - started, error: new ProviderError('network', String(error), true) };
     }
   }
 
   async complete(request: ChatCompletionRequest, signal: AbortSignal): Promise<ChatCompletionResponse> {
+    const model = this.selectedModel ?? request.model;
     const system = request.messages.find((message) => message.role === 'system')?.content;
     const contents = request.messages.filter((message) => message.role !== 'system').map((message) => ({
       role: message.role === 'assistant' ? 'model' : 'user',
       parts: [{ text: message.content }],
     }));
-    const response = await fetch(`${this.endpoint(request.model)}:generateContent?key=${encodeURIComponent(this.apiKey)}`, {
+    const response = await fetch(`${this.endpoint(model)}:generateContent?key=${encodeURIComponent(this.apiKey)}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -362,7 +382,7 @@ class GeminiProvider implements ChatProvider {
     const data = await response.json() as { candidates?: Array<{ content?: { parts?: Array<{ text?: string }> }; finishReason?: string }>; usageMetadata?: { promptTokenCount?: number; candidatesTokenCount?: number; totalTokenCount?: number } };
     const candidate = data.candidates?.[0];
     return {
-      model: request.model,
+      model,
       content: candidate?.content?.parts?.map((part) => part.text ?? '').join('') ?? '',
       finishReason: candidate?.finishReason === 'MAX_TOKENS' ? 'length' : 'stop',
       usage: data.usageMetadata ? { promptTokens: data.usageMetadata.promptTokenCount ?? 0, completionTokens: data.usageMetadata.candidatesTokenCount ?? 0, totalTokens: data.usageMetadata.totalTokenCount ?? 0 } : undefined,

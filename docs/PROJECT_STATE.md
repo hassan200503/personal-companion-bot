@@ -64,6 +64,7 @@ The existing WhatsApp bot is legacy. It must keep working. Do not modify or dele
 - The setup UI now has a `Create new provider` button that reveals the custom HTTPS OpenAI-compatible provider form.
 - Chat now has an explicit `Start listening` control, a live microphone indicator, interim speech transcript, continuous recognition restart, spoken assistant replies and `Stop listening` control. Raw microphone audio is not persisted.
 - Unrestricted device control is not claimed or enabled. Device actions must be registered through the existing tool policy, permission and confirmation layers; voice input currently routes to chat.
+- Gemini validation fix: the previous hard-coded `gemini-2.5-flash-lite` probe could return Google HTTP 404 when that model was not available to a key/project. Validation now lists models for the key, selects a model supporting `generateContent`, and uses that selection for chat. Removed-provider credentials such as stale OpenRouter entries are filtered from the active UI without deleting them.
 
 ## Blocked
 
