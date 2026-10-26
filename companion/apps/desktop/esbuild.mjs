@@ -1,7 +1,12 @@
 import { build } from "esbuild";
 import { rm } from "node:fs/promises";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 
-await rm("dist", { recursive: true, force: true });
+const appDir = dirname(fileURLToPath(import.meta.url));
+const distDir = resolve(appDir, "dist");
+
+await rm(distDir, { recursive: true, force: true });
 
 const shared = {
   bundle: true,
@@ -15,12 +20,12 @@ const shared = {
 
 await build({
   ...shared,
-  entryPoints: ["src/main/index.ts"],
-  outfile: "dist/main/index.js"
+  entryPoints: [resolve(appDir, "src/main/index.ts")],
+  outfile: resolve(distDir, "main/index.js")
 });
 
 await build({
   ...shared,
-  entryPoints: ["src/preload/index.ts"],
-  outfile: "dist/preload/index.js"
+  entryPoints: [resolve(appDir, "src/preload/index.ts")],
+  outfile: resolve(distDir, "preload/index.js")
 });

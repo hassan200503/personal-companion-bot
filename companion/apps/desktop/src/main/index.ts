@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, type IpcMainInvokeEvent } from "electron";
+import { app, BrowserWindow, ipcMain, Tray, Menu, nativeImage, shell, type IpcMainInvokeEvent } from "electron";
 import { randomUUID } from "node:crypto";
 import { appendFileSync, mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -7,9 +7,32 @@ import {
   isStorageError,
   openCompanionDatabase,
   type CompanionDatabase,
-  type Logger
+  type Logger,
+  DefaultOnboardingEngine,
+  DefaultStepRegistry,
+  DatabaseOnboardingStorage,
+  SystemCheckStep,
+  PresetChoiceStep,
+  DefaultConversationEngine,
+  SqliteConversationStore,
+  SqliteMemoryRepository,
+  createMemoryRetriever,
+  createMemoryRecorder,
+  DefaultScheduler,
+  BoundedReflectionLoop,
+  exportAllData,
+  deleteAllData,
+  backupStatus,
+  ProviderRouter,
+  getProviderEntry,
+  getProviderCatalog,
+  DefaultOnboardingPipeline,
+  createCustomOpenAiProvider,
+  encodeCustomProviderId,
+  decodeCustomProviderId,
 } from "@companion/core";
 import { ipcChannels, type AppInfo } from "../shared/ipc";
+import type { ConversationEngine, Scheduler, Conversation, ConversationMessage, CredentialStore } from "@companion/core";
 import { createDesktopCredentialStore, createDesktopKeyProtector } from "./storage/adapters";
 
 app.setName("Companion");
@@ -18,6 +41,14 @@ let logger: Logger = createLogger({ level: "info" });
 const sessionTokens = new Map<number, string>();
 let mainWindow: BrowserWindow | null = null;
 let companionDatabase: CompanionDatabase | null = null;
+let onboardingEngine: DefaultOnboardingEngine | null = null;
+let conversationEngine: ConversationEngine | null = null;
+let providerRouter: ProviderRouter | null = null;
+let credentialStore: CredentialStore | null = null;
+let defaultModel = '';
+let tray: Tray | null = null;
+let backgroundScheduler: Scheduler | null = null;
+let backgroundPaused = false;
 
 function configureFileLogging(): void {
   const logFile = join(app.getPath("userData"), "logs", "companion.log");
@@ -49,16 +80,77 @@ async function openStorage(): Promise<void> {
       keyProtector: createDesktopKeyProtector(),
       logger
     });
+    if (companionDatabase) {
+      try {
+        const registry = new DefaultStepRegistry();
+        registry.register(new SystemCheckStep());
+        registry.register(new PresetChoiceStep());
+        const storage = new DatabaseOnboardingStorage(companionDatabase);
+        onboardingEngine = new DefaultOnboardingEngine(registry, storage);
+        await onboardingEngine.initialize();
+
+        const memoryRepo = new SqliteMemoryRepository(companionDatabase.raw);
+        const convStore = new SqliteConversationStore(companionDatabase.raw);
+          credentialStore = createDesktopCredentialStore(logger);
+          const router = new ProviderRouter({ maxRetries: 8 });
+          providerRouter = router;
+
+          // Load stored provider credentials and register providers.
+          try {
+            const ids = await credentialStore!.listProviderIds();
+            for (const id of ids) {
+              const key = await credentialStore!.tryGet(id);
+              if (key) {
+                const entry = getProviderEntry(id);
+                if (entry) {
+                  router.register(entry.factory(key), 100, entry.models[0]);
+                  if (!defaultModel && entry.models.length > 0) {
+                    defaultModel = entry.models[0] ?? '';
+                  }
+                } else {
+                  const custom = decodeCustomProviderId(id);
+                  if (custom) router.register(createCustomOpenAiProvider(id, custom.name, key, custom.baseUrl), 100, custom.model);
+                }
+              }
+            }
+          } catch (e) {
+            logger.warn('failed to load stored credentials', { error: String(e) });
+          }
+
+          conversationEngine = new DefaultConversationEngine({
+            router,
+            defaultModel,
+            conversationStore: convStore,
+            memoryRetriever: createMemoryRetriever(memoryRepo),
+            memoryRecorder: createMemoryRecorder(memoryRepo),
+          });
+        backgroundScheduler = new DefaultScheduler();
+        backgroundScheduler.register({
+          id: 'reflection',
+          intervalMs: 60_000,
+          run: async () => {
+            const loop = new BoundedReflectionLoop({ maxIterations: 3, maxDurationMs: 5_000 });
+            await loop.run();
+          },
+        });
+        backgroundScheduler.start();
+      } catch (e) {
+        logger.warn("engine init failed", { error: String(e) });
+      }
+    }
   } catch (error) {
     logger.error("encrypted storage could not be opened", {
-      code: isStorageError(error) ? error.code : "unknown"
+      code: isStorageError(error) ? error.code : "unknown",
+      message: String(error)
     });
   }
 }
 
 async function checkCredentialStore(): Promise<void> {
   try {
-    const providerIds = await createDesktopCredentialStore(logger).listProviderIds();
+    const store = credentialStore ?? createDesktopCredentialStore(logger);
+    credentialStore = store;
+    const providerIds = await store.listProviderIds();
     logger.info("credential store available", { providerCount: providerIds.length });
   } catch (error) {
     logger.warn("credential store unavailable", {
@@ -66,6 +158,37 @@ async function checkCredentialStore(): Promise<void> {
     });
   }
 }
+
+  async function registerProviderKey(providerId: string, apiKey: string): Promise<{ valid: boolean; error?: string; model?: string }> {
+    if (!providerRouter || !credentialStore) throw new Error('Storage unavailable');
+    const pipeline = new DefaultOnboardingPipeline();
+    const validation = await pipeline.validateKey(providerId, apiKey);
+    if (!validation.valid) return { valid: false, error: validation.error };
+    const entry = getProviderEntry(providerId);
+    if (!entry) return { valid: false, error: 'Unknown provider' };
+    await credentialStore.set(providerId, apiKey);
+    providerRouter.register(entry.factory(apiKey), 100, entry.models[0]);
+    if (!defaultModel && entry.models.length > 0) {
+      defaultModel = entry.models[0] ?? '';
+      conversationEngine?.setDefaultModel(defaultModel);
+    }
+    return { valid: true, model: defaultModel };
+  }
+
+async function registerCustomProvider(config: { name: string; baseUrl: string; model: string }, apiKey: string): Promise<{ valid: boolean; error?: string; id?: string }> {
+  if (!providerRouter || !credentialStore) throw new Error('Storage unavailable');
+  const url = new URL(config.baseUrl);
+  if (url.protocol !== 'https:') return { valid: false, error: 'Custom provider URL must use HTTPS.' };
+  if (!config.name.trim() || !config.model.trim() || !apiKey.trim()) return { valid: false, error: 'Name, model and API key are required.' };
+  const id = encodeCustomProviderId({ name: config.name.trim(), baseUrl: url.toString().replace(/\/$/, ''), model: config.model.trim() });
+  const provider = createCustomOpenAiProvider(id, config.name.trim(), apiKey.trim(), url.toString().replace(/\/$/, ''));
+  const health = await provider.healthCheck();
+  if (!health.healthy) return { valid: false, error: health.error?.message || 'Custom provider health check failed.' };
+  await credentialStore.set(id, apiKey.trim());
+  providerRouter.register(provider, 100, config.model.trim());
+  return { valid: true, id };
+}
+
 
 function assertTrustedSender(event: IpcMainInvokeEvent, suppliedToken: unknown): void {
   const expectedToken = sessionTokens.get(event.sender.id);
@@ -93,7 +216,168 @@ function registerIpc(): void {
       platform: process.platform
     };
   });
+
+  ipcMain.handle(ipcChannels.onboardingGetState, async (event, suppliedToken: unknown): Promise<unknown> => {
+    assertTrustedSender(event, suppliedToken);
+    if (!onboardingEngine) throw new Error("Onboarding unavailable");
+    return onboardingEngine.getState();
+  });
+
+  ipcMain.handle(ipcChannels.onboardingRun, async (event, suppliedToken: unknown): Promise<unknown> => {
+    assertTrustedSender(event, suppliedToken);
+    if (!onboardingEngine) throw new Error("Onboarding unavailable");
+    const controller = new AbortController();
+    const logs: string[] = [];
+    await onboardingEngine.run({
+      signal: controller.signal,
+      log: (m: string) => logs.push(m),
+    });
+    return { state: await onboardingEngine.getState(), logs };
+  });
+
+  ipcMain.handle(ipcChannels.chatListConversations, async (event, suppliedToken: unknown): Promise<unknown[]> => {
+    assertTrustedSender(event, suppliedToken);
+    if (!conversationEngine) throw new Error("Chat unavailable");
+    return conversationEngine.listConversations().map((c: Conversation) => ({
+      id: c.id,
+      title: c.title,
+      messageCount: c.messages.length,
+      updatedAt: c.updatedAt,
+    }));
+  });
+
+  ipcMain.handle(ipcChannels.chatCreateConversation, async (event, suppliedToken: unknown, title?: string): Promise<unknown> => {
+    assertTrustedSender(event, suppliedToken);
+    if (!conversationEngine) throw new Error("Chat unavailable");
+    const c = conversationEngine.createConversation(title);
+    return { id: c.id, title: c.title, messageCount: c.messages.length, updatedAt: c.updatedAt };
+  });
+
+  ipcMain.handle(ipcChannels.chatGetConversation, async (event, suppliedToken: unknown, id: string): Promise<unknown> => {
+    assertTrustedSender(event, suppliedToken);
+    if (!conversationEngine) throw new Error("Chat unavailable");
+    const c = conversationEngine.getConversation(id);
+    if (!c) throw new Error("Not found");
+    return {
+      id: c.id,
+      title: c.title,
+      updatedAt: c.updatedAt,
+      messages: c.messages.map((m: ConversationMessage) => ({ id: m.id, role: m.role, content: m.content, createdAt: m.createdAt })),
+    };
+  });
+
+  ipcMain.handle(ipcChannels.chatSendMessage, async (event, suppliedToken: unknown, conversationId: string, content: string): Promise<unknown> => {
+    assertTrustedSender(event, suppliedToken);
+    if (!conversationEngine) throw new Error("Chat unavailable");
+    const msg = await conversationEngine.sendMessage(conversationId, content, new AbortController().signal);
+    return { id: msg.id, role: msg.role, content: msg.content, createdAt: msg.createdAt };
+  });
+
+    ipcMain.handle(ipcChannels.appOpenExternal, async (event, suppliedToken: unknown, url: string): Promise<void> => {
+      assertTrustedSender(event, suppliedToken);
+      if (typeof url !== 'string' || !/^https?:\/\//.test(url)) throw new Error('Invalid URL');
+      await shell.openExternal(url);
+    });
+
+    ipcMain.handle(ipcChannels.providersCatalog, async (event, suppliedToken: unknown): Promise<unknown> => {
+      assertTrustedSender(event, suppliedToken);
+      return getProviderCatalog().map((entry) => ({
+        id: entry.id,
+        displayName: entry.displayName,
+        signupUrl: entry.signupUrl,
+        keyUrl: entry.keyUrl,
+        keyPrefixHint: entry.keyPrefixHint,
+        needsPhone: entry.needsPhone,
+        needsCard: entry.needsCard,
+        regionNotes: entry.regionNotes,
+        models: entry.models,
+        guideSteps: entry.guideSteps,
+        privacyNote: entry.privacyNote,
+      }));
+    });
+
+    ipcMain.handle(ipcChannels.credentialsList, async (event, suppliedToken: unknown): Promise<string[]> => {
+      assertTrustedSender(event, suppliedToken);
+      if (!credentialStore) throw new Error('Credential store unavailable');
+      return credentialStore.listProviderIds();
+    });
+
+    ipcMain.handle(ipcChannels.credentialsValidate, async (event, suppliedToken: unknown, providerId: string, apiKey: string): Promise<unknown> => {
+      assertTrustedSender(event, suppliedToken);
+      const pipeline = new DefaultOnboardingPipeline();
+      return pipeline.validateKey(providerId, apiKey);
+    });
+
+    ipcMain.handle(ipcChannels.credentialsSet, async (event, suppliedToken: unknown, providerId: string, apiKey: string): Promise<unknown> => {
+      assertTrustedSender(event, suppliedToken);
+      return registerProviderKey(providerId, apiKey);
+    });
+
+    ipcMain.handle(ipcChannels.credentialsDelete, async (event, suppliedToken: unknown, providerId: string): Promise<unknown> => {
+      assertTrustedSender(event, suppliedToken);
+      if (!credentialStore || !providerRouter) throw new Error('Storage unavailable');
+      await credentialStore.delete(providerId);
+      providerRouter.unregister(providerId);
+      return { ok: true };
+    });
+
+    ipcMain.handle(ipcChannels.providersAddCustom, async (event, suppliedToken: unknown, config: { name: string; baseUrl: string; model: string }, apiKey: string): Promise<unknown> => {
+      assertTrustedSender(event, suppliedToken);
+      return registerCustomProvider(config, apiKey);
+    });
+
+
+  ipcMain.handle(ipcChannels.privacyExport, async (event, suppliedToken: unknown): Promise<unknown> => {
+    assertTrustedSender(event, suppliedToken);
+    if (!companionDatabase) throw new Error("Storage unavailable");
+    return exportAllData(companionDatabase.raw);
+  });
+
+  ipcMain.handle(ipcChannels.privacyDeleteAll, async (event, suppliedToken: unknown): Promise<unknown> => {
+    assertTrustedSender(event, suppliedToken);
+    if (!companionDatabase) throw new Error("Storage unavailable");
+    deleteAllData(companionDatabase.raw);
+    return { ok: true };
+  });
+
+  ipcMain.handle(ipcChannels.privacyBackupStatus, async (event, suppliedToken: unknown, backupDir?: string): Promise<unknown> => {
+    assertTrustedSender(event, suppliedToken);
+    return backupStatus(backupDir ?? "");
+  });
 }
+
+function createTray(): void {
+  const icon = nativeImage.createFromDataURL(
+    "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII="
+  );
+  tray = new Tray(icon);
+  tray.setToolTip("Companion");
+  const updateMenu = () => {
+    const menu = Menu.buildFromTemplate([
+      { label: "Show", click: () => mainWindow?.show() },
+      { type: "separator" },
+      {
+        label: backgroundPaused ? "Resume background" : "Pause background",
+        click: () => {
+          backgroundPaused = !backgroundPaused;
+          if (backgroundPaused) backgroundScheduler?.stop();
+          else backgroundScheduler?.start();
+          updateMenu();
+        },
+      },
+      {
+        label: "Disable startup",
+        click: () => app.setLoginItemSettings({ openAtLogin: false }),
+      },
+      { type: "separator" },
+      { label: "Exit", click: () => app.quit() },
+    ]);
+    tray?.setContextMenu(menu);
+  };
+  updateMenu();
+  tray.on("click", () => mainWindow?.show());
+}
+
 
 async function createWindow(): Promise<void> {
   const sessionToken = randomUUID();
@@ -105,7 +389,7 @@ async function createWindow(): Promise<void> {
     show: false,
     title: "Companion",
     webPreferences: {
-      preload: join(__dirname, "../preload/index"),
+      preload: join(__dirname, "../preload/index.js"),
       additionalArguments: [`--companion-session-token=${sessionToken}`],
       sandbox: true,
       contextIsolation: true,
@@ -155,6 +439,7 @@ app.whenReady().then(async () => {
   await checkCredentialStore();
   registerIpc();
   await createWindow();
+  createTray();
 
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) {
@@ -175,6 +460,19 @@ app.on("window-all-closed", () => {
 });
 
 app.on("before-quit", () => {
+  backgroundScheduler?.stop();
+  tray?.destroy();
+  tray = null;
   companionDatabase?.close();
   companionDatabase = null;
 });
+
+
+
+
+
+
+
+
+
+

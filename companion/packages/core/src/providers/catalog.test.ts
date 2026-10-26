@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { getProviderCatalog, getProviderEntry, getProvidersByMode, getProviderModels, validateKeyFormat } from './catalog.js';
+import { decodeCustomProviderId, encodeCustomProviderId, getProviderCatalog, getProviderEntry, getProvidersByMode, getProviderModels, validateKeyFormat } from './catalog.js';
 
 describe('ProviderCatalog', () => {
   it('returns all providers', () => {
@@ -77,5 +77,15 @@ describe('ProviderCatalog', () => {
     const provider = entry?.factory('gsk_test123');
     expect(provider?.id).toBe('groq');
     expect(provider?.name).toBe('Groq');
+  });
+
+  it('round-trips non-secret custom provider settings', () => {
+    const id = encodeCustomProviderId({ name: 'My Gateway', baseUrl: 'https://example.test/v1', model: 'free-model' });
+    expect(decodeCustomProviderId(id)).toEqual({ name: 'My Gateway', baseUrl: 'https://example.test/v1', model: 'free-model' });
+  });
+
+  it('rejects insecure custom provider URLs', () => {
+    const id = encodeCustomProviderId({ name: 'Gateway', baseUrl: 'http://example.test/v1', model: 'model' });
+    expect(decodeCustomProviderId(id)).toBeUndefined();
   });
 });

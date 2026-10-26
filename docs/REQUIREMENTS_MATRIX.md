@@ -210,3 +210,14 @@ Current position: M2 complete and committed as `b188202` with 28 tests passing (
 | ACC-12 | Export all data, delete it, and verify nothing remains including keys | M11 | NOT IMPLEMENTED | No build |
 | ACC-13 | New user connects one provider in under 5 minutes in a usability test with at least 5 people | M11 | NOT IMPLEMENTED | No build |
 | ACC-14 | Search database, config, logs and backups and find no key material | M11 | NOT IMPLEMENTED | No build |
+
+## M4 provider gateway update (2026-10-26)
+
+| ID | Requirement | Status | Evidence / note |
+| --- | --- | --- | --- |
+| PROV-01 | Include a free-tier Gemini provider with onboarding and API-key validation | IMPLEMENTED | Gemini REST adapter, Google AI Studio guide, tiny health probe, Credential Manager storage |
+| PROV-02 | Automatically fail over on rate limits, quota exhaustion, timeouts and provider outages | IMPLEMENTED | Structured HTTP error taxonomy, router retries, circuit breakers and quota ledger; verified by existing router tests plus full verify |
+| PROV-03 | Never send a provider the wrong model identifier during fallback | IMPLEMENTED | Router stores a model per registration and rewrites the request for the selected provider |
+| PROV-04 | Allow a user to add a favourite provider/model | IMPLEMENTED | Custom HTTPS OpenAI-compatible provider form and authenticated IPC; endpoint/model metadata is non-secret, API key uses Credential Manager |
+| PROV-05 | Avoid claiming volatile free-tier quotas as fixed facts | IMPLEMENTED | Catalog labels are warnings; exact limits are learned from errors/headers where available and official research is recorded as date-bound |
+| PROV-06 | Keep provider and API-key setup user-controlled | IMPLEMENTED | Browser links and pasted key flow; no account creation, CAPTCHA or signup automation |

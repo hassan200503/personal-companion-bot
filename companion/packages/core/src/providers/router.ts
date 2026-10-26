@@ -176,6 +176,8 @@ export interface RouterProvider {
   provider: ChatProvider;
   priority: number;
   enabled: boolean;
+  /** Model selected for this provider; prevents a fallback provider receiving another provider's model id. */
+  model?: string;
 }
 
 export interface RouterConfig {
@@ -199,11 +201,12 @@ export class ProviderRouter {
     this.quotaLedger = new QuotaLedger();
   }
 
-  register(provider: ChatProvider, priority: number = 100): void {
+  register(provider: ChatProvider, priority: number = 100, model?: string): void {
     this.providers.set(provider.id, {
       provider,
       priority,
       enabled: true,
+      model,
     });
     this.circuitBreakers.set(provider.id, new CircuitBreaker(this.config.circuitConfig));
   }
@@ -283,7 +286,9 @@ export class ProviderRouter {
       const cb = this.circuitBreakers.get(provider.id)!;
 
       try {
-        const response = await provider.complete(request, signal);
+        const registration = this.providers.get(provider.id);
+        const providerRequest = registration?.model ? { ...request, model: registration.model } : request;
+        const response = await provider.complete(providerRequest, signal);
 
         cb.recordSuccess();
         if (response.usage) {
@@ -336,7 +341,9 @@ export class ProviderRouter {
       const cb = this.circuitBreakers.get(provider.id)!;
 
       try {
-        const stream = provider.stream(request, signal);
+        const registration = this.providers.get(provider.id);
+        const providerRequest = registration?.model ? { ...request, model: registration.model } : request;
+        const stream = provider.stream(providerRequest, signal);
 
         for await (const chunk of stream) {
           yield chunk;

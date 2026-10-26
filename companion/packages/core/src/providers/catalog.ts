@@ -13,6 +13,31 @@ import { ProviderError } from './contracts.js';
 
 export const PROVIDER_CATALOG: ProviderCatalogEntry[] = [
   {
+    id: 'gemini',
+    displayName: 'Google Gemini',
+    onboardingMode: 'assisted',
+    signupUrl: 'https://aistudio.google.com/app/apikey',
+    keyUrl: 'https://aistudio.google.com/app/apikey',
+    keyPrefixHint: 'AIza',
+    needsPhone: false,
+    needsCard: false,
+    regionNotes: 'Free-tier eligibility is account and region dependent',
+    baseUrl: 'https://generativelanguage.googleapis.com',
+    openAiCompatible: false,
+    dataPolicyUrl: 'https://ai.google.dev/gemini-api/terms',
+    privacyNote: 'Google states that free-tier API content may be used to improve products; review the current terms before connecting.',
+    pricingNote: 'Free tier only. Limits and eligible models can change; the app learns them from responses instead of assuming a quota.',
+    freeTier: true,
+    guideSteps: [
+      'Open Google AI Studio and create an API key',
+      'Paste the key into Companion; it is stored in Windows Credential Manager',
+      'The app tests the key with a tiny request before saving it',
+    ],
+    models: ['gemini-2.5-flash-lite'],
+    lastVerified: '2026-10-26',
+    factory: (apiKey: string) => createGeminiProvider(apiKey),
+  },
+  {
     id: 'openrouter',
     displayName: 'OpenRouter',
     onboardingMode: 'assisted',
@@ -31,16 +56,10 @@ export const PROVIDER_CATALOG: ProviderCatalogEntry[] = [
       'Navigate to openrouter.ai/keys to generate an API key',
       'Paste the key (starts with sk-or-) into the app',
     ],
-    models: [
-      'openai/gpt-4o',
-      'openai/gpt-4o-mini',
-      'anthropic/claude-3.5-sonnet',
-      'anthropic/claude-3-haiku',
-      'google/gemini-pro-1.5',
-      'meta-llama/llama-3.1-70b-instruct',
-      'mistralai/mistral-large',
-    ],
-    lastVerified: '2025-01-01',
+    pricingNote: 'Only models explicitly marked free by OpenRouter should be selected; availability changes frequently.',
+    freeTier: true,
+    models: ['meta-llama/llama-3.3-8b-instruct:free'],
+    lastVerified: '2026-10-26',
     factory: (apiKey: string) => createOpenAiCompatibleProvider('openrouter', 'OpenRouter', apiKey, 'https://openrouter.ai/api/v1'),
   },
   {
@@ -57,6 +76,8 @@ export const PROVIDER_CATALOG: ProviderCatalogEntry[] = [
     openAiCompatible: true,
     dataPolicyUrl: 'https://groq.com/privacy-policy/',
     privacyNote: 'Fast inference; data may be used for model improvement',
+    pricingNote: 'Free developer tier with account-specific limits exposed in response headers.',
+    freeTier: true,
     guideSteps: [
       'Visit console.groq.com/signup to create an account',
       'Navigate to console.groq.com/keys to generate an API key',
@@ -68,7 +89,7 @@ export const PROVIDER_CATALOG: ProviderCatalogEntry[] = [
       'mixtral-8x7b-32768',
       'gemma2-9b-it',
     ],
-    lastVerified: '2025-01-01',
+    lastVerified: '2026-10-26',
     factory: (apiKey: string) => createOpenAiCompatibleProvider('groq', 'Groq', apiKey, 'https://api.groq.com/openai/v1'),
   },
   {
@@ -85,6 +106,8 @@ export const PROVIDER_CATALOG: ProviderCatalogEntry[] = [
     openAiCompatible: true,
     dataPolicyUrl: 'https://www.together.ai/privacy',
     privacyNote: 'Open source model hosting',
+    pricingNote: 'Free mode/credits and limits depend on the account; no paid fallback is enabled by Companion.',
+    freeTier: true,
     guideSteps: [
       'Visit api.together.xyz/signup to create an account',
       'Navigate to settings to generate an API key',
@@ -95,7 +118,7 @@ export const PROVIDER_CATALOG: ProviderCatalogEntry[] = [
       'meta-llama/Meta-Llama-3.1-8B-Instruct-Turbo',
       'mistralai/Mixtral-8x7B-Instruct-v0.1',
     ],
-    lastVerified: '2025-01-01',
+    lastVerified: '2026-10-26',
     factory: (apiKey: string) => createOpenAiCompatibleProvider('together', 'Together AI', apiKey, 'https://api.together.xyz/v1'),
   },
   {
@@ -112,6 +135,8 @@ export const PROVIDER_CATALOG: ProviderCatalogEntry[] = [
     openAiCompatible: true,
     dataPolicyUrl: 'https://fireworks.ai/privacy',
     privacyNote: 'Fast inference for open models',
+    pricingNote: 'Availability and free credits are account-specific; verify before use.',
+    freeTier: true,
     guideSteps: [
       'Visit fireworks.ai/signup to create an account',
       'Navigate to account/api-keys to generate an API key',
@@ -121,7 +146,7 @@ export const PROVIDER_CATALOG: ProviderCatalogEntry[] = [
       'accounts/fireworks/models/llama-v3p1-70b-instruct',
       'accounts/fireworks/models/llama-v3p1-8b-instruct',
     ],
-    lastVerified: '2025-01-01',
+    lastVerified: '2026-10-26',
     factory: (apiKey: string) => createOpenAiCompatibleProvider('fireworks', 'Fireworks AI', apiKey, 'https://api.fireworks.ai/inference/v1'),
   },
 ];
@@ -147,6 +172,7 @@ class OpenAiCompatibleProvider implements ChatProvider {
   }
 
   async healthCheck(): Promise<HealthStatus> {
+    const started = Date.now();
     try {
       const response = await fetch(this.baseUrl + '/models', {
         headers: { Authorization: 'Bearer ' + this.apiKey },
@@ -155,11 +181,11 @@ class OpenAiCompatibleProvider implements ChatProvider {
       return {
         healthy: response.ok,
         lastCheck: Date.now(),
-        latency: 0,
-        error: response.ok ? undefined : new ProviderError('auth_invalid', 'HTTP ' + response.status),
+        latency: Date.now() - started,
+        error: response.ok ? undefined : classifyHttpError(response.status, 'HTTP ' + response.status),
       };
     } catch (error) {
-      return { healthy: false, lastCheck: Date.now(), error: new ProviderError('network', String(error)) };
+      return { healthy: false, lastCheck: Date.now(), latency: Date.now() - started, error: new ProviderError('network', String(error), true) };
     }
   }
   async complete(request: ChatCompletionRequest, signal: AbortSignal): Promise<ChatCompletionResponse> {
@@ -172,10 +198,7 @@ class OpenAiCompatibleProvider implements ChatProvider {
 
     if (!response.ok) {
       const text = await response.text();
-      if (response.status === 401) throw new ProviderError('auth_invalid', text, false);
-      if (response.status === 429) throw new ProviderError('rate_limited', text, true, 60);
-      if (response.status === 402) throw new ProviderError('quota_exhausted', text, false);
-      throw new ProviderError('unknown', text, response.status >= 500);
+      throw classifyHttpError(response.status, text, response.headers.get('retry-after'));
     }
 
     const data = await response.json() as {
@@ -206,7 +229,7 @@ class OpenAiCompatibleProvider implements ChatProvider {
 
     if (!response.ok) {
       const text = await response.text();
-      throw new ProviderError('unknown', text, response.status >= 500);
+      throw classifyHttpError(response.status, text, response.headers.get('retry-after'));
     }
 
     const reader = response.body?.getReader();
@@ -237,8 +260,114 @@ class OpenAiCompatibleProvider implements ChatProvider {
   }
 }
 
-function createOpenAiCompatibleProvider(id: string, name: string, apiKey: string, baseUrl: string): ChatProvider {
+/** Gemini's REST API is intentionally kept separate from OpenAI-compatible APIs. */
+class GeminiProvider implements ChatProvider {
+  readonly id = 'gemini';
+  readonly name = 'Google Gemini';
+
+  constructor(private readonly apiKey: string) {}
+
+  async capabilities(): Promise<ProviderCapabilities> {
+    return { streaming: false, maxContextLength: 1_048_576, functionCalling: true, vision: true, jsonMode: true };
+  }
+
+  async healthCheck(): Promise<HealthStatus> {
+    const started = Date.now();
+    try {
+      const response = await fetch(`${this.endpoint('gemini-2.5-flash-lite')}:generateContent?key=${encodeURIComponent(this.apiKey)}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ contents: [{ role: 'user', parts: [{ text: 'Reply with OK.' }] }], generationConfig: { maxOutputTokens: 4 } }),
+        signal: AbortSignal.timeout(10000),
+      });
+      return { healthy: response.ok, lastCheck: Date.now(), latency: Date.now() - started, error: response.ok ? undefined : classifyHttpError(response.status, `HTTP ${response.status}`, response.headers.get('retry-after')) };
+    } catch (error) {
+      return { healthy: false, lastCheck: Date.now(), latency: Date.now() - started, error: new ProviderError('network', String(error), true) };
+    }
+  }
+
+  async complete(request: ChatCompletionRequest, signal: AbortSignal): Promise<ChatCompletionResponse> {
+    const system = request.messages.find((message) => message.role === 'system')?.content;
+    const contents = request.messages.filter((message) => message.role !== 'system').map((message) => ({
+      role: message.role === 'assistant' ? 'model' : 'user',
+      parts: [{ text: message.content }],
+    }));
+    const response = await fetch(`${this.endpoint(request.model)}:generateContent?key=${encodeURIComponent(this.apiKey)}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        ...(system ? { systemInstruction: { parts: [{ text: system }] } } : {}),
+        contents,
+        generationConfig: { temperature: request.temperature, maxOutputTokens: request.maxTokens, ...(request.jsonMode ? { responseMimeType: 'application/json' } : {}) },
+      }),
+      signal,
+    });
+    if (!response.ok) throw classifyHttpError(response.status, await response.text(), response.headers.get('retry-after'));
+    const data = await response.json() as { candidates?: Array<{ content?: { parts?: Array<{ text?: string }> }; finishReason?: string }>; usageMetadata?: { promptTokenCount?: number; candidatesTokenCount?: number; totalTokenCount?: number } };
+    const candidate = data.candidates?.[0];
+    return {
+      model: request.model,
+      content: candidate?.content?.parts?.map((part) => part.text ?? '').join('') ?? '',
+      finishReason: candidate?.finishReason === 'MAX_TOKENS' ? 'length' : 'stop',
+      usage: data.usageMetadata ? { promptTokens: data.usageMetadata.promptTokenCount ?? 0, completionTokens: data.usageMetadata.candidatesTokenCount ?? 0, totalTokens: data.usageMetadata.totalTokenCount ?? 0 } : undefined,
+    };
+  }
+
+  async *stream(request: ChatCompletionRequest, signal: AbortSignal): AsyncIterable<ChatCompletionChunk> {
+    const response = await this.complete(request, signal);
+    yield { delta: response.content, finishReason: response.finishReason };
+  }
+
+  private endpoint(model: string): string {
+    return `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}`;
+  }
+}
+
+function createGeminiProvider(apiKey: string): ChatProvider {
+  return new GeminiProvider(apiKey);
+}
+
+function classifyHttpError(status: number, message: string, retryAfterHeader?: string | null): ProviderError {
+  const retryAfter = retryAfterHeader ? Number(retryAfterHeader) : undefined;
+  if (status === 401) return new ProviderError('auth_invalid', message, false);
+  if (status === 402) return new ProviderError('quota_exhausted', message, false);
+  if (status === 403) return new ProviderError('region_blocked', message, false);
+  if (status === 408 || status === 504) return new ProviderError('timeout', message, true, retryAfter);
+  if (status === 429) return new ProviderError('rate_limited', message, true, Number.isFinite(retryAfter) ? retryAfter : 60);
+  if (status === 400) return new ProviderError('bad_request', message, false);
+  if (status >= 500) return new ProviderError('provider_down', message, true, retryAfter);
+  return new ProviderError('unknown', message, false);
+}
+
+export function createCustomOpenAiProvider(id: string, name: string, apiKey: string, baseUrl: string): ChatProvider {
   return new OpenAiCompatibleProvider(id, name, apiKey, baseUrl);
+}
+
+const createOpenAiCompatibleProvider = createCustomOpenAiProvider;
+
+export interface CustomProviderConfig {
+  name: string;
+  baseUrl: string;
+  model: string;
+}
+
+/** Encodes non-secret custom-provider settings into the Credential Manager target name. */
+export function encodeCustomProviderId(config: CustomProviderConfig): string {
+  const payload = Buffer.from(JSON.stringify(config), 'utf8').toString('base64url');
+  return `custom-${payload}`;
+}
+
+export function decodeCustomProviderId(id: string): CustomProviderConfig | undefined {
+  if (!id.startsWith('custom-')) return undefined;
+  try {
+    const parsed = JSON.parse(Buffer.from(id.slice(7), 'base64url').toString('utf8')) as Partial<CustomProviderConfig>;
+    if (typeof parsed.name !== 'string' || typeof parsed.baseUrl !== 'string' || typeof parsed.model !== 'string') return undefined;
+    const url = new URL(parsed.baseUrl);
+    if (url.protocol !== 'https:') return undefined;
+    return { name: parsed.name.slice(0, 80), baseUrl: url.toString().replace(/\/$/, ''), model: parsed.model.slice(0, 160) };
+  } catch {
+    return undefined;
+  }
 }
 // -------------------------------------------------------------------
 // Catalog helpers

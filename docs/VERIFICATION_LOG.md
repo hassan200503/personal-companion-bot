@@ -220,3 +220,15 @@ The first line is the create-and-keytar pass; `processRestartVerified` is false 
 Remaining verification limits: the 4096-byte page size is recorded but production code must pin it, the installer has not been installed on a clean machine, CI has not run on GitHub, and no production storage, migration, credential, backup or restore code exists yet.
 
 The gate evidence and packaging configuration were committed locally as `cbd31b5` (`G2: pass storage prototypes and record gate evidence`). Nothing has been pushed.
+## 10. M4 provider gateway thin-slice evidence (2026-10-26)
+
+| ID | Evidence | Result |
+| --- | --- | --- |
+| V-07 | Official Gemini pricing: `https://ai.google.dev/gemini-api/docs/pricing` | VERIFIED: Google documents a free tier with limited model access and warns that free-tier content may be used to improve products; limits are not treated as fixed app constants |
+| V-08 | Official Gemini model page: `https://ai.google.dev/gemini-api/docs/models` | VERIFIED: `gemini-2.5-flash-lite` is a documented model; the catalog uses it as the Gemini free-tier default as of this date |
+| V-09 | Official Groq limits: `https://console.groq.com/docs/rate-limits` | VERIFIED: account/org limits and response headers are documented; router records rate-limit failures and retry timing |
+| V-10 | Official Mistral free mode and limits: `https://docs.mistral.ai/getting-started/quickstarts/studio/activate-and-generate-api-key` and `https://docs.mistral.ai/admin/billing-usage/usage-limits` | VERIFIED: free mode/API keys exist with limited, account-specific usage; exact quotas are not hard-coded |
+| V-11 | `npm.cmd run verify` from `companion/` with approved elevated build execution; focused provider tests also rerun afterward | PASS: ESLint clean, TypeScript clean, 20 test files / 180 tests passed, Electron main/preload and Vite renderer builds completed |
+| V-12 | Provider implementation review | PASS: Gemini REST adapter; structured 400/401/402/403/408/429/5xx mapping; provider-specific model selection during fallback; custom HTTPS OpenAI-compatible provider registration |
+
+Important limitation: free-tier availability, regional eligibility and quotas remain provider-account facts and can change. The app does not promise unlimited free use. Full OS control, voice and UI automation remain behind the documented permission/risk gates; the current build does not claim to control everything.

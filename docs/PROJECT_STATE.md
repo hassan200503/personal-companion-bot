@@ -1,9 +1,9 @@
 # Project State
 
 Last updated: 2026-10-26
-Current milestone: M5, Conversation Engine (engine slice)
-Current task: M5 engine complete - conversation engine with history, memory hooks, degraded mode; 10 tests passing; typecheck/lint/build clean
-Status: M5 engine slice complete; 155/159 tests pass (4 pre-existing Windows/SQLCipher storage failures unrelated); M4 complete and committed as `f0ec874`
+Current milestone: M11, Hardening (in progress)
+Current task: M4 provider gateway thin slice complete; 180 tests passing
+Status: Provider failover and configurable-provider thin slice complete; lint/typecheck/180 tests/build clean
 
 ## What this project is
 
@@ -50,7 +50,15 @@ The existing WhatsApp bot is legacy. It must keep working. Do not modify or dele
 
 ## In progress
 
-- Starting M4 (Provider gateway and provider onboarding) next: design provider contracts (ChatProvider with capabilities/healthCheck/complete/stream), catalog structure with Modes A/B/C (OAuth PKCE, assisted, manual), router with quota ledger and fallback, post-key pipeline (validate/list models/probe/seed quotas), circuit breakers, coverage meter.
+- M4 provider gateway hardening is complete for this thin slice: Gemini REST support, free-tier-oriented catalog defaults, structured HTTP error mapping, per-provider model routing, and custom HTTPS OpenAI-compatible provider onboarding are implemented.
+
+## Latest task evidence
+
+- `npm.cmd run verify` from `companion/` passed outside the restricted sandbox: ESLint clean, TypeScript clean, 20 test files / 180 tests passed, Electron main/preload bundles and Vite renderer build completed.
+- The first sandboxed build attempt failed only because esbuild could not traverse the workspace junction; rerunning with approved elevated build execution passed.
+- Official provider research rechecked 2026-10-26: Gemini pricing/free-tier page, Gemini model page, Groq rate-limit page, and Mistral free-mode/API-limit pages. Exact quotas remain account-specific and are not hard-coded.
+- Provider defaults now use Gemini `gemini-2.5-flash-lite`, Groq free developer models, and an OpenRouter model explicitly marked `:free`; free availability remains subject to provider account/region rules.
+- Custom providers require HTTPS and are encoded without the API key in the Credential Manager target name; the API key itself remains in Windows Credential Manager.
 
 ## Blocked
 

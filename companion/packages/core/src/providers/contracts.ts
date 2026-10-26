@@ -199,6 +199,12 @@ export interface ProviderCatalogEntry {
   
   /** Privacy notes */
   privacyNote?: string;
+
+  /** Whether the listed default models are intended for the provider's no-cost tier. */
+  freeTier: boolean;
+
+  /** Human-readable warning that free-tier availability and limits are account-specific. */
+  pricingNote?: string;
   
   /** Onboarding guide steps */
   guideSteps?: string[];
