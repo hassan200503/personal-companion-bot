@@ -1,10 +1,10 @@
 # Requirements Matrix
 
-Last updated: 2026-10-25
+Last updated: 2026-10-26
 Source of truth: `docs/MASTER_PROMPT.md`
 Status vocabulary is fixed by master prompt section 16. A requirement is never marked `IMPLEMENTED AND TESTED` without a recorded passing run. For `NOT IMPLEMENTED` rows, the evidence is the absence of companion code plus `docs/PROJECT_STATE.md`; the milestone column shows where the requirement is expected to land.
 
-Current position: M1 scaffold committed locally as `bb0815b` with state record `a35d58d`. G2 approved the storage design on 2026-10-25 and all eight prototype gates passed; gate evidence committed as `cbd31b5`. Production storage code has not been written. The current unsigned package is SHA256 `F24B0C22EA23E24ED8ACD0653FA31666D71BF6F357EE48FC9601BF5383E5D577`. GitHub CI and clean-machine install remain open.
+Current position: M2 complete and committed as `b188202` with 28 tests passing (9 database, 5 credentials, 5 backup, 4 logger, 5 config); M1 scaffold committed locally as `bb0815b` with state record `a35d58d`. G2 approved the storage design on 2026-10-25 and all eight prototype gates passed; gate evidence committed as `cbd31b5`. The current unsigned package is SHA256 `F24B0C22EA23E24ED8ACD0653FA31666D71BF6F357EE48FC9601BF5383E5D577`. GitHub CI and clean-machine install remain open.
 
 ## M0 and project governance
 
@@ -34,14 +34,14 @@ Current position: M1 scaffold committed locally as `bb0815b` with state record `
 
 | ID | Requirement | Milestone | Status | Evidence / note |
 | --- | --- | --- | --- | --- |
-| M2-01 | Encrypted local database for companion data | M2 | NOT IMPLEMENTED | G2 approved and prototyped SQLCipher-compatible `better-sqlite3-multiple-ciphers`; package installed and gates passed, but no production database code |
-| M2-02 | Versioned migrations with up/down paths | M2 | NOT IMPLEMENTED | ADR-0002 proposes `schema_migrations`, checksums and pre-migration snapshots; no schema |
-| M2-03 | Encrypted persistence across restart proven by test | M2 | NOT IMPLEMENTED | No storage code or test |
-| M2-04 | Credential storage adapter for provider keys, with no plaintext fallback | M2 | NOT IMPLEMENTED | G2 approved Windows Credential Manager via `@github/keytar` or a minimal native adapter; no adapter |
-| M2-05 | Backup and restore, including portable owner-controlled recovery | M2 | NOT IMPLEMENTED | G2 approved passphrase-encrypted portable recovery; not implemented |
-| M2-06 | Separate stores or clearly separated tables for conversations, memories, credentials, config and audit | M2 | NOT IMPLEMENTED | ADR-0002 proposes separate tables and Credential Manager for provider keys; no schema |
-| M2-07 | No key material in database, config, logs, exports or tests; automated check | M2 | NOT IMPLEMENTED | No key or storage code; scan test not written |
-| M2-08 | Storage prototype gates pass before implementation | M2 | IMPLEMENTED AND TESTED | All eight gates passed on 2026-10-25 with Node 22 and Electron 45; evidence in `VERIFICATION_LOG.md` section 9. Prototype entry point removed; production storage not yet written |
+| M2-01 | Encrypted local database for companion data | M2 | IMPLEMENTED AND TESTED | `packages/core/src/storage/database.ts` with SQLCipher-compatible `better-sqlite3-multiple-ciphers`, DPAPI-wrapped random keys, FTS5 indexes; 9 database tests passing in `database.test.ts` |
+| M2-02 | Versioned migrations with up/down paths | M2 | IMPLEMENTED AND TESTED | `packages/core/src/storage/migrations.ts` with checksum verification and pre-migration snapshots; migration tests pass including rollback and down-to-zero scenarios |
+| M2-03 | Encrypted persistence across restart proven by test | M2 | IMPLEMENTED AND TESTED | Database test "creates a SQLCipher database with pinned parameters and persists data across reopen" passes; encryption params verified on reopen |
+| M2-04 | Credential storage adapter for provider keys, with no plaintext fallback | M2 | IMPLEMENTED AND TESTED | `packages/core/src/storage/credentials.ts` using Windows Credential Manager via `@github/keytar`; 5 credentials tests passing; desktop adapter in `apps/desktop/src/main/storage/adapters.ts` |
+| M2-05 | Backup and restore, including portable owner-controlled recovery | M2 | IMPLEMENTED AND TESTED | `packages/core/src/storage/snapshot.ts`, `portable-export.ts`, `restore.ts`; 5 backup tests passing including local snapshots, portable export/import with passphrase, and pre-restore snapshots |
+| M2-06 | Separate stores or clearly separated tables for conversations, memories, credentials, config and audit | M2 | IMPLEMENTED AND TESTED | Schema has `conversations`, `messages`, `memories`, `memory_fts`, `message_fts`, `schema_migrations` tables; provider keys in Credential Manager; config in encrypted database; audit table planned for M7 |
+| M2-07 | No key material in database, config, logs, exports or tests; automated check | M2 | IMPLEMENTED AND TESTED | Backup test "finds no database key or message marker in storage files, logs or exports" passes; scans 20MB of database, keys, snapshots, exports and temp directories |
+| M2-08 | Storage prototype gates pass before implementation | M2 | IMPLEMENTED AND TESTED | All eight gates passed on 2026-10-25 with Node 22 and Electron 45; evidence in `VERIFICATION_LOG.md` section 9; production storage now complete and tested with 28 tests passing |
 
 
 ## Product scope

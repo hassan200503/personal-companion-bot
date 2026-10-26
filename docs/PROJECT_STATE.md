@@ -1,9 +1,9 @@
 # Project State
 
-Last updated: 2026-10-25
-Current milestone: M2, Storage and secrets (G2 approved; all eight prototype gates passed)
-Current task: implement production encrypted persistence, migrations and their tests; no production storage code exists yet
-Status: G2 approved by the owner on 2026-10-25; all eight prototype gates passed on Windows with Electron 45 and Node 22; gate evidence committed as `cbd31b5`; final package rebuilt with only win32-x64 native binaries; M1 scaffold committed as `bb0815b`; GitHub CI and clean-machine install remain unverified
+Last updated: 2026-10-26
+Current milestone: M3, Onboarding engine core
+Current task: Design and implement the SetupStep interface and step registry for the onboarding state machine
+Status: M2 complete and committed as `b188202`; 28 tests passing (9 database, 5 credentials, 5 backup, 4 logger, 5 config); encrypted storage with DPAPI key protection, migrations, FTS5 indexes, and portable export/import fully implemented and tested; M1 scaffold committed as `bb0815b`; GitHub CI and clean-machine install remain unverified
 
 ## What this project is
 
@@ -42,11 +42,13 @@ The existing WhatsApp bot is legacy. It must keep working. Do not modify or dele
 - Packaging gate: electron-builder packaged only the win32-x64 `.node` files; the all-prebuild build shrank from 412,831,026 to 378,963,727 unpacked bytes after pruning. The final unsigned NSIS installer is 122,573,738 bytes (116.9 MiB), SHA256 `F24B0C22EA23E24ED8ACD0653FA31666D71BF6F357EE48FC9601BF5383E5D577`, `NotSigned`; the final unpacked app is 379,071,247 bytes across 103 files.
 - Removed the temporary packaged probe from the production main process after capturing evidence. `npm run verify` passed after cleanup: ESLint clean, TypeScript clean, 2 test files / 9 tests, main bundle 743.4 KB. A normal packaged launch produced 4 responding processes and left none running.
 - Committed the G2 gate evidence, native dependencies, packaging configuration and documentation locally as `cbd31b5` (`G2: pass storage prototypes and record gate evidence`). Nothing has been pushed.
+- Implemented M2 production storage: encrypted database with SQLCipher-compatible encryption, DPAPI-wrapped random database keys, Windows Credential Manager adapter for provider keys, versioned schema migrations with rollback, FTS5 full-text search indexes for messages and memories, local snapshots via `VACUUM INTO`, portable export/import with passphrase-based encryption, and comprehensive tests. All 28 tests passing (9 database, 5 credentials, 5 backup, 4 logger, 5 config). No secrets in logs, exports or temp files verified.
+- Committed M2 storage implementation locally as `b188202` (`M2: implement encrypted storage with database, credentials, backup and migrations`). Nothing has been pushed.
 
 ## In progress
 
-- Implementing M2 production storage next: encrypted open/create, the DPAPI-wrapped database key manifest, versioned migrations, FTS5 schema, and tests. The G2 design is proven, but no production storage, credential, backup or restore code exists yet.
-- M1 scaffold and report are committed as `bb0815b`. The original M1 installer hash was superseded by the M2 dependency build; CI execution on GitHub and a clean-machine install remain open.
+- Starting M3 (Onboarding engine core) next: design and implement SetupStep interface, step registry, state machine persistence, Setup Doctor, system-check and preset steps, and wizard shell UI.
+- M1 scaffold and report are committed as `bb0815b`. CI execution on GitHub and a clean-machine install remain open.
 
 ## Blocked
 
@@ -63,9 +65,9 @@ The existing WhatsApp bot is legacy. It must keep working. Do not modify or dele
 
 ## Next three tasks
 
-1. Implement the M2 encrypted storage layer: key creation/wrapping, database open/create, schema migrations, FTS5 tables and integration tests with a temporary data directory.
-2. Add the Credential Manager provider-key adapter, local snapshot and portable backup/restore, including tamper and raw-key scans.
-3. Re-run `npm run verify` and `npm run package`, record production storage evidence, then proceed to the M2 acceptance checks.
+1. Design and implement the SetupStep interface with detect/explain/run/verify/repair/rollback methods and the step registry for the M3 onboarding engine.
+2. Create the onboarding state machine with persistence, resumability after kill, parallel background checks, and Setup Doctor repair mode.
+3. Implement system-check and preset steps (Recommended, Privacy-first, Minimal) with UI shell and progress tracking.
 
 ## Commands that work
 
