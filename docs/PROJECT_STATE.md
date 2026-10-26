@@ -1,9 +1,9 @@
 # Project State
 
 Last updated: 2026-10-26
-Current milestone: M3, Onboarding engine core
-Current task: Design and implement the SetupStep interface and step registry for the onboarding state machine
-Status: M2 complete and committed as `b188202`; 28 tests passing (9 database, 5 credentials, 5 backup, 4 logger, 5 config); encrypted storage with DPAPI key protection, migrations, FTS5 indexes, and portable export/import fully implemented and tested; M1 scaffold committed as `bb0815b`; GitHub CI and clean-machine install remain unverified
+Current milestone: M4, Provider Gateway
+Current task: Design provider contracts and catalog structure
+Status: M3 complete and committed as `223053c`; 80 tests passing (56 onboarding, 24 storage/config/logger); onboarding engine with contracts, registry, state machine, concrete steps (system-check, preset-choice), and database persistence fully implemented and tested; M2 complete and committed as `b188202`; 28 tests passing (9 database, 5 credentials, 5 backup, 4 logger, 5 config); encrypted storage with DPAPI key protection, migrations, FTS5 indexes, and portable export/import fully implemented and tested; M1 scaffold committed as `bb0815b`; GitHub CI and clean-machine install remain unverified
 
 ## What this project is
 
@@ -44,11 +44,13 @@ The existing WhatsApp bot is legacy. It must keep working. Do not modify or dele
 - Committed the G2 gate evidence, native dependencies, packaging configuration and documentation locally as `cbd31b5` (`G2: pass storage prototypes and record gate evidence`). Nothing has been pushed.
 - Implemented M2 production storage: encrypted database with SQLCipher-compatible encryption, DPAPI-wrapped random database keys, Windows Credential Manager adapter for provider keys, versioned schema migrations with rollback, FTS5 full-text search indexes for messages and memories, local snapshots via `VACUUM INTO`, portable export/import with passphrase-based encryption, and comprehensive tests. All 28 tests passing (9 database, 5 credentials, 5 backup, 4 logger, 5 config). No secrets in logs, exports or temp files verified.
 - Committed M2 storage implementation locally as `b188202` (`M2: implement encrypted storage with database, credentials, backup and migrations`). Nothing has been pushed.
+- Implemented M3 onboarding engine core: SetupStep interface with detect/explain/run/verify/repair/rollback methods, DefaultStepRegistry with topological dependency ordering and cycle detection, DefaultOnboardingEngine state machine with idempotency (detect before run), resumability after crashes (persisted state), Setup Doctor repair mode, cancellation support via AbortSignal. Created concrete steps: SystemCheckStep (Windows platform/version/disk/memory validation) and PresetChoiceStep (Recommended/Privacy-first/Minimal user presets). Integrated with M2 encrypted storage via DatabaseOnboardingStorage and migration v2 (onboarding_state table). All 80 tests passing (56 onboarding: 9 registry + 13 engine + 9 system-check + 16 preset-choice + 9 storage; 24 storage/config/logger from M2).
+- Committed M3 onboarding engine in 4 commits: `d475665` (contracts and registry), `c48e9fc` (state machine), `aa25fa2` (concrete steps), `223053c` (storage integration). Nothing has been pushed.
+- M3 exit criteria met and verified: idempotency test passes (does not re-run satisfied steps), resume test passes (resumes from incomplete step after state restore), repair test passes (Setup Doctor fixes broken steps).
 
 ## In progress
 
-- Starting M3 (Onboarding engine core) next: design and implement SetupStep interface, step registry, state machine persistence, Setup Doctor, system-check and preset steps, and wizard shell UI.
-- M1 scaffold and report are committed as `bb0815b`. CI execution on GitHub and a clean-machine install remain open.
+- Starting M4 (Provider gateway and provider onboarding) next: design provider contracts (ChatProvider with capabilities/healthCheck/complete/stream), catalog structure with Modes A/B/C (OAuth PKCE, assisted, manual), router with quota ledger and fallback, post-key pipeline (validate/list models/probe/seed quotas), circuit breakers, coverage meter.
 
 ## Blocked
 
@@ -65,9 +67,9 @@ The existing WhatsApp bot is legacy. It must keep working. Do not modify or dele
 
 ## Next three tasks
 
-1. Design and implement the SetupStep interface with detect/explain/run/verify/repair/rollback methods and the step registry for the M3 onboarding engine.
-2. Create the onboarding state machine with persistence, resumability after kill, parallel background checks, and Setup Doctor repair mode.
-3. Implement system-check and preset steps (Recommended, Privacy-first, Minimal) with UI shell and progress tracking.
+1. Design ChatProvider interface with capabilities(), healthCheck(), complete(), stream() methods and error taxonomy (auth_invalid, rate_limited, quota_exhausted, region_blocked, etc).
+2. Create provider catalog structure with onboarding modes: Mode A (OAuth PKCE for OpenRouter), Mode B (assisted with clipboard paste), Mode C (manual guide).
+3. Implement router with quota ledger (from observed headers and 429s), circuit breakers, and fallback logic.
 
 ## Commands that work
 
