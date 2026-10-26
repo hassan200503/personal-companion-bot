@@ -47,7 +47,7 @@ export class MockProvider implements ChatProvider {
     this.config = config;
   }
 
-  async capabilities(_model?: string): Promise<ProviderCapabilities> {
+  async capabilities(): Promise<ProviderCapabilities> {
     return {
       streaming: true,
       maxContextLength: 8192,
@@ -101,8 +101,8 @@ export class MockProvider implements ChatProvider {
     }
 
     const content = this.config.responseContent || 'Mock response';
-    const promptTokens = this.estimateTokens(request.messages);
-    const completionTokens = this.estimateTokens([{ role: 'assistant', content }]);
+    const promptTokens = this.estimateTokens(request.messages.map(m => ({ content: m.content })));
+    const completionTokens = this.estimateTokens([{ content }]);
 
     return {
       model: request.model,

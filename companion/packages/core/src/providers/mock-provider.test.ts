@@ -145,7 +145,8 @@ describe('MockProvider', () => {
     };
 
     await expect(async () => {
-      for await (const _ of provider.stream(request, new AbortController().signal)) {
+      for await (const chunk of provider.stream(request, new AbortController().signal)) {
+        void chunk;
         // Should throw before yielding
       }
     }).rejects.toThrow('Stream timeout');
@@ -179,7 +180,8 @@ describe('MockProvider', () => {
     controller.abort();
 
     await expect(async () => {
-      for await (const _ of provider.stream(request, controller.signal)) {
+      for await (const chunk of provider.stream(request, controller.signal)) {
+        void chunk;
         // Should throw before yielding
       }
     }).rejects.toThrow('cancelled');
@@ -211,7 +213,8 @@ describe('MockProvider', () => {
       messages: [{ role: 'user' as const, content: 'Test' }],
     };
 
-    for await (const _ of provider.stream(request, new AbortController().signal)) {
+    for await (const chunk of provider.stream(request, new AbortController().signal)) {
+      void chunk;
       // Consume stream
     }
 
@@ -261,8 +264,8 @@ describe('MockProvider', () => {
 
     expect(response.usage?.promptTokens).toBeGreaterThan(0);
     expect(response.usage?.completionTokens).toBeGreaterThan(0);
-    expect(response.usage?.totalTokens).toBe(
-      response.usage.promptTokens + response.usage.completionTokens
+    expect(response.usage!.totalTokens).toBe(
+      response.usage!.promptTokens + response.usage!.completionTokens
     );
   });
 });

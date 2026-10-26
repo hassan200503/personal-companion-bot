@@ -2,8 +2,8 @@
 
 Last updated: 2026-10-26
 Current milestone: M4, Provider Gateway
-Current task: Design provider contracts and catalog structure
-Status: M3 complete and committed as `223053c`; 80 tests passing (56 onboarding, 24 storage/config/logger); onboarding engine with contracts, registry, state machine, concrete steps (system-check, preset-choice), and database persistence fully implemented and tested; M2 complete and committed as `b188202`; 28 tests passing (9 database, 5 credentials, 5 backup, 4 logger, 5 config); encrypted storage with DPAPI key protection, migrations, FTS5 indexes, and portable export/import fully implemented and tested; M1 scaffold committed as `bb0815b`; GitHub CI and clean-machine install remain unverified
+Current task: M4 complete - router, catalog, onboarding pipeline implemented and tested
+Status: M4 complete and ready to commit; 65 provider tests passing (18 mock + 27 router + 11 catalog + 9 onboarding); M3 complete and committed as `223053c` (80 tests); M2 complete and committed as `b188202` (28 tests); M1 scaffold committed as `bb0815b`
 
 ## What this project is
 
