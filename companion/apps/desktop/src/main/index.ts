@@ -1,12 +1,71 @@
 import { app, BrowserWindow, ipcMain, type IpcMainInvokeEvent } from "electron";
 import { randomUUID } from "node:crypto";
-import { join } from "node:path";
-import { createLogger } from "@companion/core";
+import { appendFileSync, mkdirSync } from "node:fs";
+import { dirname, join } from "node:path";
+import {
+  createLogger,
+  isStorageError,
+  openCompanionDatabase,
+  type CompanionDatabase,
+  type Logger
+} from "@companion/core";
 import { ipcChannels, type AppInfo } from "../shared/ipc";
+import { createDesktopCredentialStore, createDesktopKeyProtector } from "./storage/adapters";
 
-const logger = createLogger({ level: "info" });
+app.setName("Companion");
+
+let logger: Logger = createLogger({ level: "info" });
 const sessionTokens = new Map<number, string>();
 let mainWindow: BrowserWindow | null = null;
+let companionDatabase: CompanionDatabase | null = null;
+
+function configureFileLogging(): void {
+  const logFile = join(app.getPath("userData"), "logs", "companion.log");
+
+  try {
+    mkdirSync(dirname(logFile), { recursive: true });
+  } catch {
+    return;
+  }
+
+  logger = createLogger({
+    level: "info",
+    sink: (line) => {
+      console.log(line);
+
+      try {
+        appendFileSync(logFile, `${line}\n`, "utf8");
+      } catch {
+        // Logging must never take down the app.
+      }
+    }
+  });
+}
+
+async function openStorage(): Promise<void> {
+  try {
+    companionDatabase = await openCompanionDatabase({
+      userDataDir: app.getPath("userData"),
+      keyProtector: createDesktopKeyProtector(),
+      logger
+    });
+  } catch (error) {
+    logger.error("encrypted storage could not be opened", {
+      code: isStorageError(error) ? error.code : "unknown"
+    });
+  }
+}
+
+async function checkCredentialStore(): Promise<void> {
+  try {
+    const providerIds = await createDesktopCredentialStore(logger).listProviderIds();
+    logger.info("credential store available", { providerCount: providerIds.length });
+  } catch (error) {
+    logger.warn("credential store unavailable", {
+      code: isStorageError(error) ? error.code : "unknown"
+    });
+  }
+}
 
 function assertTrustedSender(event: IpcMainInvokeEvent, suppliedToken: unknown): void {
   const expectedToken = sessionTokens.get(event.sender.id);
@@ -91,6 +150,9 @@ async function createWindow(): Promise<void> {
 
 app.whenReady().then(async () => {
   app.setAppUserModelId("com.kkc36.companion");
+  configureFileLogging();
+  await openStorage();
+  await checkCredentialStore();
   registerIpc();
   await createWindow();
 
@@ -110,4 +172,9 @@ app.on("window-all-closed", () => {
   if (process.platform !== "darwin") {
     app.quit();
   }
+});
+
+app.on("before-quit", () => {
+  companionDatabase?.close();
+  companionDatabase = null;
 });

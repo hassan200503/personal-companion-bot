@@ -11,12 +11,14 @@
     ".": "./src/index.ts",
     "./config": "./src/config.ts",
     "./logger": "./src/logger.ts",
-    "./contracts/provider": "./src/contracts/provider.ts"
+    "./contracts/provider": "./src/contracts/provider.ts",
+    "./storage": "./src/storage/index.ts"
+  },
+  "dependencies": {
+    "better-sqlite3-multiple-ciphers": "13.0.3",
+    "zod": "^4.6.7"
   },
   "scripts": {
     "test": "vitest run"
-  },
-  "dependencies": {
-    "zod": "^4.6.7"
   }
 }
