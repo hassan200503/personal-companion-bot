@@ -19,4 +19,6 @@ export type {
   ProviderCapabilities,
   ProviderErrorCode
 } from "./contracts/provider";
-export * from "./storage";
+export * from './storage';
+export * from './providers/index.js';
+export * from './conversation/index.js';

@@ -12,7 +12,9 @@
     "./config": "./src/config.ts",
     "./logger": "./src/logger.ts",
     "./contracts/provider": "./src/contracts/provider.ts",
-    "./storage": "./src/storage/index.ts"
+    "./storage": "./src/storage/index.ts",
+    "./providers": "./src/providers/index.ts",
+    "./conversation": "./src/conversation/index.ts"
   },
   "dependencies": {
     "better-sqlite3-multiple-ciphers": "13.0.3",

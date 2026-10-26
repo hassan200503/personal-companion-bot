@@ -1,9 +1,9 @@
 # Project State
 
 Last updated: 2026-10-26
-Current milestone: M4, Provider Gateway
-Current task: M4 complete - router, catalog, onboarding pipeline implemented and tested
-Status: M4 complete and ready to commit; 65 provider tests passing (18 mock + 27 router + 11 catalog + 9 onboarding); M3 complete and committed as `223053c` (80 tests); M2 complete and committed as `b188202` (28 tests); M1 scaffold committed as `bb0815b`
+Current milestone: M5, Conversation Engine (engine slice)
+Current task: M5 engine complete - conversation engine with history, memory hooks, degraded mode; 10 tests passing; typecheck/lint/build clean
+Status: M5 engine slice complete; 155/159 tests pass (4 pre-existing Windows/SQLCipher storage failures unrelated); M4 complete and committed as `f0ec874`
 
 ## What this project is
 
