@@ -22,3 +22,8 @@ export type {
 export * from './storage';
 export * from './providers/index.js';
 export * from './conversation/index.js';
+export * from './memory/index.js';
+export * from './onboarding/index.js';
+export * from './tools/index.js';
+export * from './background/index.js';
+export * from './privacy/index.js';

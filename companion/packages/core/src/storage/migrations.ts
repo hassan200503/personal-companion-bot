@@ -155,6 +155,22 @@ const addOnboardingStateDown = `
 DROP TABLE onboarding_state;
 `;
 
+const addMemoryEventsUp = `
+CREATE TABLE memory_events (
+  id TEXT PRIMARY KEY,
+  memory_id TEXT NOT NULL REFERENCES memories(id) ON DELETE CASCADE,
+  type TEXT NOT NULL,
+  detail_json TEXT NOT NULL DEFAULT '{}',
+  created_at TEXT NOT NULL
+);
+
+CREATE INDEX memory_events_memory_created_idx ON memory_events (memory_id, created_at);
+`;
+
+const addMemoryEventsDown = `
+DROP INDEX memory_events_memory_created_idx;
+DROP TABLE memory_events;
+`;
 export const migrationList: readonly Migration[] = [
   {
     version: 1,
@@ -167,6 +183,12 @@ export const migrationList: readonly Migration[] = [
     name: "add-onboarding-state",
     up: addOnboardingStateUp,
     down: addOnboardingStateDown
+  },
+  {
+    version: 3,
+    name: "add-memory-events",
+    up: addMemoryEventsUp,
+    down: addMemoryEventsDown
   }
 ];
 

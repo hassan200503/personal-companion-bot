@@ -93,7 +93,7 @@ describe("encrypted backup and recovery", () => {
     const keyText = protector.lastKeyText;
     database.close();
 
-    expect(summary.schemaVersion).toBe(1);
+    expect(summary.schemaVersion).toBe(3);
     const exportBytes = await readFile(exportPath);
     expect(exportBytes.includes(Buffer.from(marker, "utf8"))).toBe(false);
     expect(exportBytes.includes(Buffer.from(keyText ?? "", "utf8"))).toBe(false);
@@ -103,7 +103,7 @@ describe("encrypted backup and recovery", () => {
     });
 
     const decrypted = await decryptPortableExport(exportPath, passphrase);
-    expect(decrypted.plaintextHeader.schemaVersion).toBe(1);
+    expect(decrypted.plaintextHeader.schemaVersion).toBe(3);
     expect(decrypted.databaseBytes.includes(Buffer.from(marker, "utf8"))).toBe(false);
 
     const tamperedPath = join(tempDir, "tampered.companion-backup");
@@ -128,7 +128,7 @@ describe("encrypted backup and recovery", () => {
       });
 
       expect(result.keyId).not.toBe(originalKeyId);
-      expect(result.schemaVersion).toBe(1);
+      expect(result.schemaVersion).toBe(3);
 
       const restored = await openCompanionDatabase({
         userDataDir: restoreDir,
@@ -250,3 +250,4 @@ describe("encrypted backup and recovery", () => {
     expect(lines.join("\n")).not.toContain(marker);
   });
 });
+

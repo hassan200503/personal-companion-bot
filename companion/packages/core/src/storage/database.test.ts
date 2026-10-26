@@ -49,7 +49,7 @@ describe("encrypted companion storage", () => {
       logger
     });
 
-    expect(database.schemaVersion).toBe(1);
+    expect(database.schemaVersion).toBe(3);
     expect({
       cipher: String(database.raw.pragma("cipher", { simple: true })),
       legacy: Number(database.raw.pragma("legacy", { simple: true })),
@@ -204,7 +204,7 @@ describe("encrypted companion storage", () => {
     first.close();
 
     const failingMigration: Migration = {
-      version: 2,
+      version: 4,
       name: "failing-migration",
       up: "CREATE TABLE extra_table (id TEXT); INSERT INTO missing_table VALUES ('x');",
       down: "DROP TABLE extra_table;"
@@ -220,7 +220,7 @@ describe("encrypted companion storage", () => {
 
     const paths = buildStoragePaths(tempDir);
     const snapshots = (await readdir(paths.backupDir)).filter((name) =>
-      name.startsWith("pre-migration-v1-")
+      name.startsWith("pre-migration-v3-")
     );
     expect(snapshots).toHaveLength(1);
 
@@ -236,7 +236,7 @@ describe("encrypted companion storage", () => {
       .get("message-1") as { content: string };
 
     expect(extra).toBeUndefined();
-    expect(reopened.schemaVersion).toBe(1);
+    expect(reopened.schemaVersion).toBe(3);
     expect(row.content).toBe(marker);
     reopened.close();
   });
@@ -275,7 +275,7 @@ describe("encrypted companion storage", () => {
         .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'messages'")
         .get()
     ).toBeDefined();
-    expect(database.raw.pragma("user_version", { simple: true })).toBe(1);
+    expect(database.raw.pragma("user_version", { simple: true })).toBe(3);
     database.close();
   });
 
@@ -326,3 +326,4 @@ describe("encrypted companion storage", () => {
     database.close();
   });
 });
+

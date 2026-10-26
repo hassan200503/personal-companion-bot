@@ -28,6 +28,12 @@ export interface Conversation {
   updatedAt: string;
 }
 
+export interface ConversationStore {
+  loadAll(): Conversation[];
+  saveConversation(conversation: Conversation): void;
+  deleteConversation(id: string): void;
+}
+
 export interface ConversationEngineOptions {
   router: ProviderRouter;
   systemPrompt?: string;
@@ -39,6 +45,7 @@ export interface ConversationEngineOptions {
   now?: () => Date;
   memoryRetriever?: (query: string) => Promise<string[]>;
   memoryRecorder?: (user: string, assistant: string) => Promise<void>;
+  conversationStore?: ConversationStore;
 }
 
 export class ConversationError extends Error {
@@ -67,6 +74,7 @@ export interface ConversationEngine {
     signal: AbortSignal
   ): AsyncIterable<string>;
   isDegraded(): boolean;
+  setDefaultModel(model: string): void;
   resetDegraded(): void;
   setMemoryHooks(hooks: {
     retrieve?: (query: string) => Promise<string[]>;

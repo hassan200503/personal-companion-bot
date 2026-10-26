@@ -13,6 +13,7 @@ import type {
   ConversationEngine,
   ConversationEngineOptions,
   ConversationMessage,
+  ConversationStore,
 } from './contracts.js';
 import { ConversationError } from './contracts.js';
 
@@ -23,13 +24,14 @@ const DEFAULT_MAX_HISTORY = 20;
 export class DefaultConversationEngine implements ConversationEngine {
   private readonly router: ProviderRouter;
   private readonly systemPrompt?: string;
-  private readonly defaultModel: string;
+  private defaultModel: string;
   private readonly maxHistoryMessages: number;
   private readonly maxOutputTokens?: number;
   private readonly temperature?: number;
   private readonly idFactory: () => string;
   private readonly now: () => Date;
 
+  private readonly conversationStore?: ConversationStore;
   private conversations = new Map<string, Conversation>();
   private degraded = false;
   private memoryRetriever?: (query: string) => Promise<string[]>;
@@ -46,6 +48,12 @@ export class DefaultConversationEngine implements ConversationEngine {
     this.now = options.now ?? (() => new Date());
     this.memoryRetriever = options.memoryRetriever;
     this.memoryRecorder = options.memoryRecorder;
+    this.conversationStore = options.conversationStore;
+    if (this.conversationStore) {
+      for (const c of this.conversationStore.loadAll()) {
+        this.conversations.set(c.id, c);
+      }
+    }
   }
 
   createConversation(title?: string): Conversation {
@@ -67,6 +75,7 @@ export class DefaultConversationEngine implements ConversationEngine {
       });
     }
     this.conversations.set(conv.id, conv);
+    this.conversationStore?.saveConversation(conv);
     return conv;
   }
 
@@ -79,7 +88,13 @@ export class DefaultConversationEngine implements ConversationEngine {
   }
 
   deleteConversation(id: string): boolean {
-    return this.conversations.delete(id);
+    const ok = this.conversations.delete(id);
+    if (ok) this.conversationStore?.deleteConversation(id);
+    return ok;
+  }
+
+  setDefaultModel(model: string): void {
+    if (model) this.defaultModel = model;
   }
 
   isDegraded(): boolean {
@@ -105,6 +120,7 @@ export class DefaultConversationEngine implements ConversationEngine {
     };
     conv.messages.push(userMsg);
     conv.updatedAt = now;
+    this.conversationStore?.saveConversation(conv);
 
     let memorySnippets: string[] = [];
     if (this.memoryRetriever) {
@@ -155,6 +171,7 @@ export class DefaultConversationEngine implements ConversationEngine {
     };
     conv.messages.push(assistantMsg);
     conv.updatedAt = assistantMsg.createdAt;
+    this.conversationStore?.saveConversation(conv);
 
     if (this.memoryRecorder) {
       void this.memoryRecorder(userContent, response.content).catch(() => {
@@ -185,6 +202,7 @@ export class DefaultConversationEngine implements ConversationEngine {
     };
     conv.messages.push(userMsg);
     conv.updatedAt = now;
+    this.conversationStore?.saveConversation(conv);
 
     let memorySnippets: string[] = [];
     if (this.memoryRetriever) {
@@ -239,6 +257,7 @@ export class DefaultConversationEngine implements ConversationEngine {
     };
     conv.messages.push(assistantMsg);
     conv.updatedAt = assistantMsg.createdAt;
+    this.conversationStore?.saveConversation(conv);
 
     if (this.memoryRecorder) {
       void this.memoryRecorder(userContent, accumulated).catch(() => {
@@ -284,3 +303,4 @@ export class DefaultConversationEngine implements ConversationEngine {
     if (hooks.record) this.memoryRecorder = hooks.record;
   }
 }
+
