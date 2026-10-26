@@ -2,8 +2,8 @@
 
 Last updated: 2026-10-26
 Current milestone: M11, Hardening (in progress)
-Current task: Provider catalog revision complete; 180 tests passing
-Status: Gemini, DeepSeek, OpenAI/ChatGPT, Anthropic/Claude and Perplexity are the active defaults; custom provider creation remains available; lint/typecheck/tests clean
+Current task: Live voice interaction thin slice complete; 180 tests passing
+Status: Visible opt-in continuous listening, interim transcripts, spoken replies and Stop listening control implemented; lint/typecheck/tests/build clean
 
 ## What this project is
 
@@ -62,6 +62,8 @@ The existing WhatsApp bot is legacy. It must keep working. Do not modify or dele
 - Active default catalog was revised to exactly Gemini, DeepSeek, OpenAI/ChatGPT, Anthropic/Claude and Perplexity. Groq, OpenRouter, Together AI and Fireworks are no longer exposed by `getProviderCatalog()` or onboarding.
 - Existing removed-provider credentials are left untouched for safety but are ignored by startup registration until the owner removes them.
 - The setup UI now has a `Create new provider` button that reveals the custom HTTPS OpenAI-compatible provider form.
+- Chat now has an explicit `Start listening` control, a live microphone indicator, interim speech transcript, continuous recognition restart, spoken assistant replies and `Stop listening` control. Raw microphone audio is not persisted.
+- Unrestricted device control is not claimed or enabled. Device actions must be registered through the existing tool policy, permission and confirmation layers; voice input currently routes to chat.
 
 ## Blocked
 

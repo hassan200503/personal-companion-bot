@@ -237,6 +237,25 @@ input, textarea {
   padding: 16px;
   gap: 12px;
 }
+.voice-panel {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--bg);
+}
+.voice-panel.listening { border-color: var(--accent); background: var(--accent-soft); }
+.voice-status { display: flex; align-items: center; gap: 10px; }
+.voice-dot { width: 10px; height: 10px; border-radius: 999px; background: var(--muted); }
+.voice-dot.live { background: #d92d20; box-shadow: 0 0 0 5px rgba(217, 45, 32, 0.14); animation: voice-pulse 1.6s ease-in-out infinite; }
+.voice-actions { display: flex; gap: 8px; }
+.voice-transcript { width: 100%; color: var(--muted); font-style: italic; border-top: 1px solid var(--border); padding-top: 8px; }
+.voice-error { width: 100%; color: var(--danger); font-size: 0.85rem; }
+@keyframes voice-pulse { 50% { opacity: 0.45; transform: scale(0.8); } }
 .messages { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 12px; }
 .message { padding: 12px 14px; border-radius: 14px; max-width: 80%; }
 .message.user { align-self: flex-end; background: var(--accent-soft); }

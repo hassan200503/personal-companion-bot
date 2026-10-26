@@ -1,7 +1,31 @@
 import type { AppInfo } from "../shared/ipc";
 
 declare global {
+  interface SpeechRecognitionEventLike extends Event {
+    results: { length: number; [index: number]: { isFinal: boolean; [index: number]: { transcript: string; confidence: number } } };
+    resultIndex: number;
+  }
+
+  interface SpeechRecognitionLike {
+    continuous: boolean;
+    interimResults: boolean;
+    lang: string;
+    onstart: (() => void) | null;
+    onend: (() => void) | null;
+    onerror: ((event: { error: string }) => void) | null;
+    onresult: ((event: SpeechRecognitionEventLike) => void) | null;
+    start(): void;
+    stop(): void;
+    abort(): void;
+  }
+
+  interface SpeechRecognitionConstructor {
+    new(): SpeechRecognitionLike;
+  }
+
   interface Window {
+    SpeechRecognition?: SpeechRecognitionConstructor;
+    webkitSpeechRecognition?: SpeechRecognitionConstructor;
     companion: {
       getInfo(): Promise<AppInfo>;
       openExternal(url: string): Promise<void>;

@@ -241,3 +241,11 @@ Important limitation: free-tier availability, regional eligibility and quotas re
 | V-14 | Provider implementation inspection | PASS: Gemini native REST, DeepSeek/OpenAI/Perplexity OpenAI-compatible APIs, and Anthropic Messages API are represented with separate endpoints and request formats |
 | V-15 | `npm.cmd run lint`, `npm.cmd run typecheck`, `npm.cmd run test -- --run` | PASS: 180 tests passed |
 | V-16 | Official API references | OpenAI Chat Completions: `https://platform.openai.com/docs/api-reference/chat`; DeepSeek Chat Completions: `https://api-docs.deepseek.com/api/create-chat-completion/`; Anthropic API docs: `https://docs.anthropic.com/en/api/messages`; Perplexity API docs: `https://docs.perplexity.ai/` |
+
+## 12. Live voice interaction evidence (2026-10-26)
+
+| ID | Evidence | Result |
+| --- | --- | --- |
+| V-17 | Renderer voice implementation inspection | PASS: explicit start, continuous recognition, visible live state, interim transcript, spoken response, stop/cleanup paths |
+| V-18 | `npm.cmd run verify` from `companion/` with approved elevated build execution | PASS: ESLint clean, TypeScript clean, 20 test files / 180 tests passed, Electron/Vite production build completed |
+| V-19 | Privacy/safety inspection | PASS: no raw audio persistence; microphone is not started until the owner presses Start listening; arbitrary OS control is not enabled by voice alone |

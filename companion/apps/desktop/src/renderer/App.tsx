@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 type Provider = {
   id: string;
@@ -35,6 +35,14 @@ export default function App() {
   const [draft, setDraft] = useState('');
   const [custom, setCustom] = useState({ name: '', baseUrl: '', model: '', apiKey: '' });
   const [showCustomProvider, setShowCustomProvider] = useState(false);
+  const [voiceMode, setVoiceMode] = useState(false);
+  const [voiceState, setVoiceState] = useState<'off' | 'starting' | 'listening' | 'processing' | 'paused' | 'unsupported'>('off');
+  const [interimTranscript, setInterimTranscript] = useState('');
+  const [voiceError, setVoiceError] = useState('');
+  const [speaking, setSpeaking] = useState(false);
+  const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
+  const voiceModeRef = useRef(false);
+  const speakingRef = useRef(false);
 
   const selected = providers.find((p) => p.id === selectedProvider) || providers[0];
 
@@ -53,6 +61,12 @@ export default function App() {
 
   useEffect(() => {
     void loadAll();
+  }, []);
+
+  useEffect(() => () => {
+    voiceModeRef.current = false;
+    recognitionRef.current?.abort();
+    window.speechSynthesis?.cancel();
   }, []);
 
   async function runOnboarding() {
@@ -174,10 +188,19 @@ export default function App() {
     }
   }
 
-  async function sendDraft() {
-    if (!draft.trim() || !activeConv) return;
-    const content = draft.trim();
-    setDraft('');
+  function speakReply(content: string): void {
+    if (!('speechSynthesis' in window) || !content.trim()) return;
+    recognitionRef.current?.stop();
+    window.speechSynthesis.cancel();
+    const utterance = new SpeechSynthesisUtterance(content);
+    utterance.onstart = () => { speakingRef.current = true; setSpeaking(true); };
+    utterance.onend = () => { speakingRef.current = false; setSpeaking(false); if (voiceModeRef.current) setVoiceState('listening'); };
+    utterance.onerror = () => { speakingRef.current = false; setSpeaking(false); if (voiceModeRef.current) setVoiceState('listening'); };
+    window.speechSynthesis.speak(utterance);
+  }
+
+  async function sendMessage(content: string, speak = false): Promise<void> {
+    if (!content.trim() || !activeConv) return;
     setBusy(true);
     setError('');
     try {
@@ -186,11 +209,85 @@ export default function App() {
       const result: any = await window.companion.chatSendMessage(activeConv, content);
       setMessages((prev) => [...prev, { id: result.id, role: result.role, content: result.content, createdAt: result.createdAt }]);
       setConversations(await window.companion.chatListConversations());
+      if (speak) speakReply(result.content);
     } catch (e) {
       setError(String(e));
     } finally {
       setBusy(false);
+      if (voiceModeRef.current) setVoiceState('listening');
     }
+  }
+
+  async function sendDraft() {
+    if (!draft.trim()) return;
+    const content = draft.trim();
+    setDraft('');
+    await sendMessage(content, false);
+  }
+
+  function startListening(): void {
+    if (!activeConv) {
+      setVoiceError('Create or select a chat before starting live listening.');
+      return;
+    }
+    const Recognition = window.SpeechRecognition ?? window.webkitSpeechRecognition;
+    if (!Recognition) {
+      setVoiceState('unsupported');
+      setVoiceError('Live speech recognition is not available in this Electron runtime.');
+      return;
+    }
+    setVoiceError('');
+    voiceModeRef.current = true;
+    setVoiceMode(true);
+    const recognition = new Recognition();
+    recognition.continuous = true;
+    recognition.interimResults = true;
+    recognition.lang = 'en-US';
+    recognition.onstart = () => setVoiceState('listening');
+    recognition.onend = () => {
+      if (voiceModeRef.current && !speakingRef.current) {
+        window.setTimeout(() => { if (voiceModeRef.current) { try { recognition.start(); } catch { /* already starting */ } } }, 250);
+      }
+    };
+    recognition.onerror = (event) => {
+      if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {
+        voiceModeRef.current = false;
+        setVoiceMode(false);
+        setVoiceState('off');
+        setVoiceError('Microphone permission was denied. Enable it in Windows/Electron settings to listen.');
+      } else if (event.error !== 'aborted') {
+        setVoiceError(`Speech recognition: ${event.error}`);
+      }
+    };
+    recognition.onresult = (event) => {
+      let finalText = '';
+      let interim = '';
+      for (let index = event.resultIndex; index < event.results.length; index += 1) {
+        const text = event.results[index]?.[0]?.transcript ?? '';
+        if (event.results[index]?.isFinal) finalText += text;
+        else interim += text;
+      }
+      setInterimTranscript(interim);
+      if (finalText.trim()) {
+        setInterimTranscript('');
+        setVoiceState('processing');
+        void sendMessage(finalText.trim(), true);
+      }
+    };
+    recognitionRef.current = recognition;
+    setVoiceState('starting');
+    try { recognition.start(); } catch (error) { setVoiceError(String(error)); }
+  }
+
+  function stopListening(): void {
+    voiceModeRef.current = false;
+    setVoiceMode(false);
+    setVoiceState('off');
+    setInterimTranscript('');
+    recognitionRef.current?.stop();
+    window.speechSynthesis?.cancel();
+    speakingRef.current = false;
+    setSpeaking(false);
   }
 
   return (
@@ -426,6 +523,20 @@ export default function App() {
             </aside>
 
             <section className="chat-main">
+              <div className={voiceMode ? 'voice-panel listening' : 'voice-panel'}>
+                <div className="voice-status">
+                  <span className={voiceMode ? 'voice-dot live' : 'voice-dot'} aria-hidden="true" />
+                  <div>
+                    <strong>{voiceMode ? (speaking ? 'Companion is speaking' : voiceState === 'processing' ? 'Processing what you said' : 'Listening live') : 'Live voice is off'}</strong>
+                    <div className="muted">{voiceMode ? 'Microphone active · raw audio is not recorded' : 'Start this only when you want the microphone active'}</div>
+                  </div>
+                </div>
+                <div className="voice-actions">
+                  {!voiceMode ? <button onClick={startListening} disabled={busy || !activeConv}>Start listening</button> : <button className="danger" onClick={stopListening}>Stop listening</button>}
+                </div>
+                {interimTranscript && <div className="voice-transcript" aria-live="polite">{interimTranscript}</div>}
+                {voiceError && <div className="voice-error" role="alert">{voiceError}</div>}
+              </div>
               <div className="messages">
                 {messages.length === 0 && (
                   <div className="empty-state">

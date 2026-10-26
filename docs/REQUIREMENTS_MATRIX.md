@@ -223,3 +223,7 @@ Current position: M2 complete and committed as `b188202` with 28 tests passing (
 | PROV-06 | Keep provider and API-key setup user-controlled | IMPLEMENTED | Browser links and pasted key flow; no account creation, CAPTCHA or signup automation |
 | PROV-07 | Active defaults are Gemini, DeepSeek, OpenAI/ChatGPT, Anthropic/Claude and Perplexity | IMPLEMENTED | Active catalog and UI provider cards contain only these five defaults |
 | PROV-08 | Allow creation of a provider outside the defaults | IMPLEMENTED | `Create new provider` button reveals a tested HTTPS OpenAI-compatible endpoint form |
+| VOICE-01 | Owner can explicitly start a live listening session and see its state | IMPLEMENTED | Chat voice panel shows off/starting/listening/processing/speaking, live dot and interim transcript |
+| VOICE-02 | Spoken owner input reaches the conversation and assistant replies can be spoken | IMPLEMENTED | Browser speech recognition routes final text through existing chat IPC; SpeechSynthesis speaks the reply |
+| VOICE-03 | Owner can pause/stop microphone capture and raw audio is not persisted | IMPLEMENTED | `Stop listening` calls recognition stop/abort and speech synthesis cancel; no audio storage path exists |
+| VOICE-04 | Voice may execute arbitrary device operations without controls | NOT IMPLEMENTED BY DESIGN | Actions remain subject to the tool registry, permissions, confirmation and audit requirements |
