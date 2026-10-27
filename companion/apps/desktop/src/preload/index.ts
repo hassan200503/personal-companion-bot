@@ -19,9 +19,11 @@ const api = Object.freeze({
   privacyDeleteAll: () : Promise<unknown> => ipcRenderer.invoke(ipcChannels.privacyDeleteAll, sessionToken),
   privacyBackupStatus: (backupDir?: string) : Promise<unknown> => ipcRenderer.invoke(ipcChannels.privacyBackupStatus, sessionToken, backupDir),
   providersCatalog: () : Promise<unknown> => ipcRenderer.invoke(ipcChannels.providersCatalog, sessionToken),
+  providersDiscoverModels: (providerId: string, apiKey: string): Promise<unknown> =>
+    ipcRenderer.invoke(ipcChannels.providersDiscoverModels, sessionToken, providerId, apiKey),
   credentialsList: () : Promise<string[]> => ipcRenderer.invoke(ipcChannels.credentialsList, sessionToken),
   credentialsValidate: (providerId: string, apiKey: string) : Promise<unknown> => ipcRenderer.invoke(ipcChannels.credentialsValidate, sessionToken, providerId, apiKey),
-  credentialsSet: (providerId: string, apiKey: string) : Promise<unknown> => ipcRenderer.invoke(ipcChannels.credentialsSet, sessionToken, providerId, apiKey),
+  credentialsSet: (providerId: string, apiKey: string, model?: string) : Promise<unknown> => ipcRenderer.invoke(ipcChannels.credentialsSet, sessionToken, providerId, apiKey, model),
   credentialsDelete: (providerId: string) : Promise<unknown> => ipcRenderer.invoke(ipcChannels.credentialsDelete, sessionToken, providerId),
   providersAddCustom: (config: { name: string; baseUrl: string; model: string }, apiKey: string): Promise<unknown> => ipcRenderer.invoke(ipcChannels.providersAddCustom, sessionToken, config, apiKey),
   osListTools: (): Promise<unknown> => ipcRenderer.invoke(ipcChannels.osListTools, sessionToken),

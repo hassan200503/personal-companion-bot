@@ -39,9 +39,10 @@ declare global {
       privacyDeleteAll(): Promise<any>;
       privacyBackupStatus(backupDir?: string): Promise<any>;
       providersCatalog(): Promise<any>;
+      providersDiscoverModels(providerId: string, apiKey: string): Promise<any>;
       credentialsList(): Promise<string[]>;
       credentialsValidate(providerId: string, apiKey: string): Promise<any>;
-      credentialsSet(providerId: string, apiKey: string): Promise<any>;
+      credentialsSet(providerId: string, apiKey: string, model?: string): Promise<any>;
       credentialsDelete(providerId: string): Promise<any>;
       providersAddCustom(config: { name: string; baseUrl: string; model: string }, apiKey: string): Promise<any>;
        osListTools(): Promise<any>;

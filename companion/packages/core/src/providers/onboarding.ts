@@ -72,6 +72,13 @@ export class DefaultOnboardingPipeline implements OnboardingPipeline {
       return { valid: true, providerId };
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
+      if (/timeout|aborted/i.test(message)) {
+        return {
+          valid: false,
+          error: 'Gemini could not be reached within 30 seconds. Check your internet connection, VPN/proxy, firewall, or DNS settings, then try again.',
+          providerId,
+        };
+      }
       return { valid: false, error: message, providerId };
     }
   }

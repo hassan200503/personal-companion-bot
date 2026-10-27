@@ -17,6 +17,15 @@ type Provider = {
   freeTier: boolean;
 };
 
+type DiscoveredModel = {
+  id: string;
+  name: string;
+  free: boolean;
+  contextLength?: number;
+  supportsTools?: boolean;
+  supportsVision?: boolean;
+};
+
 export default function App() {
   const [info, setInfo] = useState<any>(null);
   const [tab, setTab] = useState<'setup' | 'chat'>('setup');
@@ -24,6 +33,8 @@ export default function App() {
   const [stored, setStored] = useState<string[]>([]);
   const [selectedProvider, setSelectedProvider] = useState('gemini');
   const [apiKey, setApiKey] = useState('');
+  const [discoveredModels, setDiscoveredModels] = useState<DiscoveredModel[]>([]);
+  const [selectedModel, setSelectedModel] = useState('');
   const [validation, setValidation] = useState<any>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -42,6 +53,7 @@ export default function App() {
   const [speaking, setSpeaking] = useState(false);
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
   const voiceModeRef = useRef(false);
+  const voiceProcessingRef = useRef(false);
   const speakingRef = useRef(false);
 
   const selected = providers.find((p) => p.id === selectedProvider) || providers[0];
@@ -101,12 +113,37 @@ export default function App() {
     }
   }
 
+  async function discoverModels() {
+    if (!selected || !apiKey.trim()) return;
+    setBusy(true);
+    setError('');
+    try {
+      const result = await window.companion.providersDiscoverModels(selected.id, apiKey.trim());
+      const models = Array.isArray(result) ? result as DiscoveredModel[] : [];
+      setDiscoveredModels(models);
+      setSelectedModel(models[0]?.id || selected.models[0] || '');
+      setStatus('Found ' + models.length + ' live model(s) for ' + selected.displayName + '.');
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function saveKey() {
     if (!selected) return;
     setBusy(true);
     setError('');
     try {
-      const result: any = await window.companion.credentialsSet(selected.id, apiKey.trim());
+      let model = selectedModel;
+      if (!model) {
+        const discovered = await window.companion.providersDiscoverModels(selected.id, apiKey.trim());
+        const models = Array.isArray(discovered) ? discovered as DiscoveredModel[] : [];
+        model = models[0]?.id || selected.models[0] || '';
+        setDiscoveredModels(models);
+        setSelectedModel(model);
+      }
+      const result: any = await window.companion.credentialsSet(selected.id, apiKey.trim(), model || undefined);
       if (!result?.valid) throw new Error(result?.error || 'Could not save key');
       setStored(await window.companion.credentialsList());
       setApiKey('');
@@ -189,13 +226,48 @@ export default function App() {
   }
 
   function speakReply(content: string): void {
-    if (!('speechSynthesis' in window) || !content.trim()) return;
+    if (!('speechSynthesis' in window) || !content.trim()) {
+      setVoiceError('Voice output is not available in this Electron runtime.');
+      return;
+    }
     recognitionRef.current?.stop();
     window.speechSynthesis.cancel();
     const utterance = new SpeechSynthesisUtterance(content);
-    utterance.onstart = () => { speakingRef.current = true; setSpeaking(true); };
-    utterance.onend = () => { speakingRef.current = false; setSpeaking(false); if (voiceModeRef.current) setVoiceState('listening'); };
-    utterance.onerror = () => { speakingRef.current = false; setSpeaking(false); if (voiceModeRef.current) setVoiceState('listening'); };
+    utterance.lang = navigator.language || 'en-US';
+    utterance.rate = 0.95;
+    utterance.pitch = 1;
+    const voices = window.speechSynthesis.getVoices();
+    utterance.voice = voices.find((voice) => voice.lang.toLowerCase().startsWith(utterance.lang.slice(0, 2).toLowerCase()))
+      || voices.find((voice) => voice.lang.toLowerCase().startsWith('en'))
+      || voices[0]
+      || null;
+    utterance.onstart = () => { speakingRef.current = true; setSpeaking(true); setVoiceState('processing'); };
+    utterance.onend = () => {
+      speakingRef.current = false;
+      setSpeaking(false);
+      if (voiceModeRef.current) {
+        setVoiceState('listening');
+        window.setTimeout(() => {
+          if (voiceModeRef.current && !voiceProcessingRef.current) {
+            try { recognitionRef.current?.start(); } catch { /* recognition is already starting */ }
+          }
+        }, 350);
+      }
+    };
+    utterance.onerror = () => {
+      speakingRef.current = false;
+      setSpeaking(false);
+      setVoiceError('Voice output failed. Check that Windows has an installed speech voice.');
+      if (voiceModeRef.current) {
+        setVoiceState('listening');
+        window.setTimeout(() => {
+          if (voiceModeRef.current && !voiceProcessingRef.current) {
+            try { recognitionRef.current?.start(); } catch { /* recognition is already starting */ }
+          }
+        }, 350);
+      }
+    };
+    window.speechSynthesis.resume();
     window.speechSynthesis.speak(utterance);
   }
 
@@ -228,7 +300,8 @@ export default function App() {
       setError(String(e));
     } finally {
       setBusy(false);
-      if (voiceModeRef.current) setVoiceState('listening');
+      voiceProcessingRef.current = false;
+      if (voiceModeRef.current && !speakingRef.current) setVoiceState('listening');
     }
   }
 
@@ -254,13 +327,17 @@ export default function App() {
     voiceModeRef.current = true;
     setVoiceMode(true);
     const recognition = new Recognition();
-    recognition.continuous = true;
+    recognition.continuous = false;
     recognition.interimResults = true;
-    recognition.lang = 'en-US';
+    recognition.lang = navigator.language || 'en-US';
     recognition.onstart = () => setVoiceState('listening');
     recognition.onend = () => {
-      if (voiceModeRef.current && !speakingRef.current) {
-        window.setTimeout(() => { if (voiceModeRef.current) { try { recognition.start(); } catch { /* already starting */ } } }, 250);
+      if (voiceModeRef.current && !speakingRef.current && !voiceProcessingRef.current) {
+        window.setTimeout(() => {
+          if (voiceModeRef.current && !speakingRef.current && !voiceProcessingRef.current) {
+            try { recognition.start(); } catch { /* recognition is already starting */ }
+          }
+        }, 350);
       }
     };
     recognition.onerror = (event) => {
@@ -269,6 +346,15 @@ export default function App() {
         setVoiceMode(false);
         setVoiceState('off');
         setVoiceError('Microphone permission was denied. Enable it in Windows/Electron settings to listen.');
+      } else if (event.error === 'audio-capture') {
+        voiceModeRef.current = false;
+        setVoiceMode(false);
+        setVoiceState('off');
+        setVoiceError('No microphone was found. Connect a microphone and try again.');
+      } else if (event.error === 'network') {
+        setVoiceError('Speech recognition needs a network connection. Check the connection and try again.');
+      } else if (event.error === 'no-speech') {
+        setVoiceError('I did not hear speech. Try speaking closer to the microphone.');
       } else if (event.error !== 'aborted') {
         setVoiceError(`Speech recognition: ${event.error}`);
       }
@@ -285,6 +371,8 @@ export default function App() {
       if (finalText.trim()) {
         setInterimTranscript('');
         setVoiceState('processing');
+        voiceProcessingRef.current = true;
+        recognition.stop();
         void sendMessage(finalText.trim(), true);
       }
     };
@@ -295,6 +383,7 @@ export default function App() {
 
   function stopListening(): void {
     voiceModeRef.current = false;
+    voiceProcessingRef.current = false;
     setVoiceMode(false);
     setVoiceState('off');
     setInterimTranscript('');
@@ -449,7 +538,7 @@ export default function App() {
                   <button
                     key={p.id}
                     className={p.id === selectedProvider ? 'provider-card active' : 'provider-card'}
-                    onClick={() => { setSelectedProvider(p.id); setValidation(null); }}
+                    onClick={() => { setSelectedProvider(p.id); setValidation(null); setDiscoveredModels([]); setSelectedModel(''); }}
                   >
                     <div className="provider-name">{p.displayName}</div>
                     <div className="provider-meta">
@@ -486,8 +575,23 @@ export default function App() {
 
                   <div className="actions">
                     <button onClick={testKey} disabled={busy || !apiKey.trim()}>Test key</button>
+                    <button onClick={discoverModels} disabled={busy || !apiKey.trim()}>Discover live models</button>
                     <button onClick={saveKey} disabled={busy || !apiKey.trim()}>Save key</button>
                   </div>
+
+                  {(discoveredModels.length > 0 || selectedModel) && (
+                    <label className="field-label" htmlFor="modelSelect">
+                      Model
+                      <select id="modelSelect" value={selectedModel} onChange={(e) => setSelectedModel(e.target.value)}>
+                        {discoveredModels.map((model) => (
+                          <option key={model.id} value={model.id}>
+                            {model.name}{model.free ? ' · free' : ''}
+                          </option>
+                        ))}
+                        {discoveredModels.length === 0 && selectedModel && <option value={selectedModel}>{selectedModel}</option>}
+                      </select>
+                    </label>
+                  )}
 
                   {validation && (
                     <div className={validation.valid ? 'banner success' : 'banner error'}>

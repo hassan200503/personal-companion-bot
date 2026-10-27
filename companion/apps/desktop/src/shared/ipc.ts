@@ -40,6 +40,7 @@ export const ipcChannels = {
   privacyDeleteAll: 'privacy:deleteAll',
   privacyBackupStatus: 'privacy:backupStatus',
   providersCatalog: 'providers:catalog',
+  providersDiscoverModels: 'providers:discoverModels',
   credentialsList: 'credentials:list',
   credentialsValidate: 'credentials:validate',
   credentialsSet: 'credentials:set',

@@ -193,6 +193,7 @@ const DEFAULT_ROUTER_CONFIG: RouterConfig = {
 export class ProviderRouter {
   private providers: Map<string, RouterProvider> = new Map();
   private circuitBreakers: Map<string, CircuitBreaker> = new Map();
+  private healthCache: Map<string, number> = new Map();
   private quotaLedger: QuotaLedger;
   private config: RouterConfig;
 
@@ -209,11 +210,13 @@ export class ProviderRouter {
       model,
     });
     this.circuitBreakers.set(provider.id, new CircuitBreaker(this.config.circuitConfig));
+    this.healthCache.delete(provider.id);
   }
 
   unregister(providerId: string): void {
     this.providers.delete(providerId);
     this.circuitBreakers.delete(providerId);
+    this.healthCache.delete(providerId);
   }
 
   setEnabled(providerId: string, enabled: boolean): void {
@@ -252,13 +255,21 @@ export class ProviderRouter {
       const cb = this.circuitBreakers.get(rp.provider.id)!;
       if (cb.isOpen()) continue;
       if (this.quotaLedger.isRateLimited(rp.provider.id)) continue;
+      const cachedHealthyUntil = this.healthCache.get(rp.provider.id) ?? 0;
+      if (cachedHealthyUntil > Date.now()) return rp.provider;
 
       try {
         const health = await rp.provider.healthCheck();
         if (health.healthy) {
+          // Avoid a full remote model probe before every message. This is
+          // especially important for voice: a reply can arrive immediately
+          // after the user's previous utterance.
+          this.healthCache.set(rp.provider.id, Date.now() + 30_000);
           return rp.provider;
         }
+        this.healthCache.delete(rp.provider.id);
       } catch {
+        this.healthCache.delete(rp.provider.id);
         cb.recordFailure();
       }
     }
@@ -291,6 +302,7 @@ export class ProviderRouter {
         const response = await provider.complete(providerRequest, signal);
 
         cb.recordSuccess();
+        this.healthCache.set(provider.id, Date.now() + 30_000);
         if (response.usage) {
           this.quotaLedger.record(
             provider.id,
@@ -350,6 +362,7 @@ export class ProviderRouter {
         }
 
         cb.recordSuccess();
+        this.healthCache.set(provider.id, Date.now() + 30_000);
         return;
       } catch (error) {
         lastError = error instanceof Error ? error : new Error(String(error));

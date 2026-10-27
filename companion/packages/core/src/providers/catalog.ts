@@ -165,6 +165,39 @@ export const PROVIDER_CATALOG: ProviderCatalogEntry[] = [
     models: ['gemini-2.5-flash-lite'], lastVerified: '2026-10-26', factory: (key) => createGeminiProvider(key),
   },
   {
+    id: 'openrouter', displayName: 'OpenRouter', onboardingMode: 'assisted',
+    signupUrl: 'https://openrouter.ai/signup', keyUrl: 'https://openrouter.ai/keys', keyPrefixHint: 'sk-or-',
+    needsPhone: false, needsCard: false, regionNotes: 'Free plan and model availability are account and provider dependent',
+    baseUrl: 'https://openrouter.ai/api/v1', openAiCompatible: true, dataPolicyUrl: 'https://openrouter.ai/privacy',
+    privacyNote: 'Routes prompts to the selected upstream model provider; review the selected model and provider policies.',
+    pricingNote: 'Companion discovers models currently priced at zero. Free models can be rate-limited or removed.', freeTier: true,
+    guideSteps: ['Create an OpenRouter account', 'Create an API key', 'Use Discover models to choose a currently free model'],
+    models: ['openrouter/free'], lastVerified: '2026-10-26',
+    factory: (key) => createOpenAiCompatibleProvider('openrouter', 'OpenRouter', key, 'https://openrouter.ai/api/v1'),
+  },
+  {
+    id: 'groq', displayName: 'Groq', onboardingMode: 'assisted',
+    signupUrl: 'https://console.groq.com/signup', keyUrl: 'https://console.groq.com/keys', keyPrefixHint: 'gsk_',
+    needsPhone: false, needsCard: false, regionNotes: 'Free developer access and limits vary by account and region',
+    baseUrl: 'https://api.groq.com/openai/v1', openAiCompatible: true, dataPolicyUrl: 'https://groq.com/privacy-policy/',
+    privacyNote: 'Fast hosted inference; review Groq and model-provider data policies before sending private content.',
+    pricingNote: 'Free developer limits are exposed by the API and may change.', freeTier: true,
+    guideSteps: ['Create a Groq account', 'Create an API key', 'Use Discover models to select a live model'],
+    models: ['openai/gpt-oss-120b', 'openai/gpt-oss-20b'], lastVerified: '2026-10-26',
+    factory: (key) => createOpenAiCompatibleProvider('groq', 'Groq', key, 'https://api.groq.com/openai/v1'),
+  },
+  {
+    id: 'nvidia', displayName: 'NVIDIA API Catalog', onboardingMode: 'assisted',
+    signupUrl: 'https://build.nvidia.com/', keyUrl: 'https://build.nvidia.com/settings/api-keys',
+    needsPhone: false, needsCard: false, regionNotes: 'Free developer access is intended for prototyping and subject to endpoint limits',
+    baseUrl: 'https://integrate.api.nvidia.com/v1', openAiCompatible: true, dataPolicyUrl: 'https://www.nvidia.com/en-us/about-nvidia/privacy-policy/',
+    privacyNote: 'Hosted NVIDIA inference; review NVIDIA API trial terms and model policies.',
+    pricingNote: 'NVIDIA provides free prototype access, but rate limits and model availability are not guaranteed.', freeTier: true,
+    guideSteps: ['Create a free NVIDIA Developer account', 'Create an API key at build.nvidia.com', 'Use Discover models to choose an available model'],
+    models: ['nvidia/llama-3.1-nemotron-ultra-253b-v1'], lastVerified: '2026-10-26',
+    factory: (key) => createOpenAiCompatibleProvider('nvidia', 'NVIDIA API Catalog', key, 'https://integrate.api.nvidia.com/v1'),
+  },
+  {
     id: 'deepseek', displayName: 'DeepSeek', onboardingMode: 'assisted',
     signupUrl: 'https://platform.deepseek.com/sign_up', keyUrl: 'https://platform.deepseek.com/api_keys',
     needsPhone: false, needsCard: false, regionNotes: 'Account and regional availability apply',
@@ -232,7 +265,7 @@ class OpenAiCompatibleProvider implements ChatProvider {
     try {
       const response = await fetch(this.baseUrl + '/models', {
         headers: { Authorization: 'Bearer ' + this.apiKey },
-        signal: AbortSignal.timeout(10000),
+        signal: AbortSignal.timeout(30000),
       });
       return {
         healthy: response.ok,
@@ -333,7 +366,7 @@ class GeminiProvider implements ChatProvider {
     try {
       const modelsResponse = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${encodeURIComponent(this.apiKey)}`, {
         headers: { 'x-goog-api-key': this.apiKey },
-        signal: AbortSignal.timeout(10000),
+        signal: AbortSignal.timeout(30000),
       });
       if (!modelsResponse.ok) {
         const detail = await modelsResponse.text();
@@ -348,14 +381,12 @@ class GeminiProvider implements ChatProvider {
       if (!this.selectedModel) {
         return { healthy: false, lastCheck: Date.now(), latency: Date.now() - started, error: new ProviderError('bad_request', 'This Gemini key exposes no model supporting generateContent.') };
       }
-      const response = await fetch(`${this.endpoint(this.selectedModel)}:generateContent?key=${encodeURIComponent(this.apiKey)}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'x-goog-api-key': this.apiKey },
-        body: JSON.stringify({ contents: [{ role: 'user', parts: [{ text: 'Reply with OK.' }] }], generationConfig: { maxOutputTokens: 4 } }),
-        signal: AbortSignal.timeout(10000),
-      });
-      const detail = response.ok ? undefined : await response.text();
-      return { healthy: response.ok, lastCheck: Date.now(), latency: Date.now() - started, error: response.ok ? undefined : classifyHttpError(response.status, detail ?? `HTTP ${response.status}`, response.headers.get('retry-after')) };
+      // Listing models with the authenticated key is sufficient for health
+      // validation. Do not spend a second request on a synthetic generation
+      // probe: the router calls healthCheck before every message, and that
+      // extra probe can time out or consume free-tier quota immediately before
+      // the real request (especially in voice mode).
+      return { healthy: true, lastCheck: Date.now(), latency: Date.now() - started };
     } catch (error) {
       return { healthy: false, lastCheck: Date.now(), latency: Date.now() - started, error: new ProviderError('network', String(error), true) };
     }
@@ -516,6 +547,78 @@ export function getProvidersByMode(mode: 'oauth' | 'assisted' | 'manual'): Provi
 export function getProviderModels(id: string): string[] {
   const entry = getProviderEntry(id);
   return entry?.models || [];
+}
+
+export interface DiscoveredModel {
+  id: string;
+  name: string;
+  providerId: string;
+  free: boolean;
+  contextLength?: number;
+  supportsTools?: boolean;
+  supportsVision?: boolean;
+  inputPrice?: number;
+  outputPrice?: number;
+}
+
+function numericPrice(value: unknown): number | undefined {
+  if (typeof value === 'number') return value;
+  if (typeof value === 'string' && value.trim() !== '') {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : undefined;
+  }
+  return undefined;
+}
+
+/** Fetch and normalize the provider's current model list. */
+export async function discoverProviderModels(providerId: string, apiKey: string): Promise<DiscoveredModel[]> {
+  const entry = getProviderEntry(providerId);
+  if (!entry) throw new ProviderError('bad_request', 'Unknown provider: ' + providerId);
+  if (!apiKey.trim()) throw new ProviderError('auth_invalid', 'API key is empty');
+
+  if (providerId === 'gemini') {
+    const response = await fetch('https://generativelanguage.googleapis.com/v1beta/models?key=' + encodeURIComponent(apiKey), {
+      headers: { 'x-goog-api-key': apiKey }, signal: AbortSignal.timeout(30000),
+    });
+    if (!response.ok) throw classifyHttpError(response.status, await response.text(), response.headers.get('retry-after'));
+    const body = await response.json() as { models?: Array<{ name?: string; displayName?: string; inputTokenLimit?: number; supportedGenerationMethods?: string[] }> };
+    return (body.models ?? [])
+      .filter((model) => model.name && model.supportedGenerationMethods?.includes('generateContent'))
+      .map((model) => ({
+        id: model.name!.replace(/^models\//, ''), name: model.displayName || model.name!.replace(/^models\//, ''),
+        providerId, free: true, contextLength: model.inputTokenLimit, supportsTools: true, supportsVision: true,
+      }));
+  }
+
+  const response = await fetch(entry.baseUrl + '/models', {
+    headers: { Authorization: 'Bearer ' + apiKey }, signal: AbortSignal.timeout(30000),
+  });
+  if (!response.ok) throw classifyHttpError(response.status, await response.text(), response.headers.get('retry-after'));
+  const body = await response.json() as {
+    data?: Array<{
+      id?: string; name?: string; context_length?: number; context_window?: number;
+      pricing?: { prompt?: unknown; completion?: unknown }; supported_parameters?: string[];
+      architecture?: { input_modalities?: string[] };
+    }>;
+  };
+  const discovered = (body.data ?? []).filter((model) => model.id).map((model) => {
+    const inputPrice = numericPrice(model.pricing?.prompt);
+    const outputPrice = numericPrice(model.pricing?.completion);
+    const free = providerId === 'openrouter'
+      ? (model.id!.endsWith(':free') || (inputPrice === 0 && outputPrice === 0))
+      : true;
+    return {
+      id: model.id!, name: model.name || model.id!, providerId, free,
+      contextLength: model.context_length ?? model.context_window,
+      supportsTools: model.supported_parameters?.includes('tools'),
+      supportsVision: model.architecture?.input_modalities?.includes('image'),
+      inputPrice, outputPrice,
+    };
+  });
+  const freeModels = providerId === 'openrouter' ? discovered.filter((model) => model.free) : discovered;
+  return freeModels.length > 0
+    ? freeModels
+    : entry.models.map((id) => ({ id, name: id, providerId, free: entry.freeTier }));
 }
 
 export function validateKeyFormat(id: string, key: string): { valid: boolean; error?: string } {

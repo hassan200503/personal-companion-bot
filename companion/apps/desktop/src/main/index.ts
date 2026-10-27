@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, Tray, Menu, nativeImage, shell, type IpcMainInvokeEvent } from "electron";
+import { app, BrowserWindow, ipcMain, Tray, Menu, nativeImage, shell, net, session, type IpcMainInvokeEvent } from "electron";
 import { randomUUID } from "node:crypto";
 import { appendFileSync, mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -26,6 +26,7 @@ import {
   ProviderRouter,
   getProviderEntry,
   getProviderCatalog,
+  discoverProviderModels,
   DefaultOnboardingPipeline,
   createCustomOpenAiProvider,
   encodeCustomProviderId,
@@ -42,6 +43,14 @@ import { createDesktopCredentialStore, createDesktopKeyProtector } from "./stora
 
 app.setName("Companion");
 
+// Use Electron's Chromium network stack for provider requests. Node's fetch
+// does not consistently honor the Windows/Electron proxy and certificate
+// configuration, which can make Google requests hang until AbortSignal.timeout.
+function configureProviderNetwork(): void {
+  const electronFetch = net.fetch.bind(net) as typeof globalThis.fetch;
+  globalThis.fetch = electronFetch;
+}
+
 let logger: Logger = createLogger({ level: "info" });
 const sessionTokens = new Map<number, string>();
 let mainWindow: BrowserWindow | null = null;
@@ -57,6 +66,37 @@ let defaultModel = '';
 let tray: Tray | null = null;
 let backgroundScheduler: Scheduler | null = null;
 let backgroundPaused = false;
+
+function modelSettingKey(providerId: string): string {
+  return 'provider.model.' + providerId;
+}
+
+function getSavedProviderModel(providerId: string): string | undefined {
+  try {
+    const row = companionDatabase?.raw.prepare('SELECT value FROM settings WHERE key = ?').get(modelSettingKey(providerId)) as { value?: string } | undefined;
+    return row?.value || undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function saveProviderModel(providerId: string, model: string): void {
+  try {
+    companionDatabase?.raw.prepare(
+      'INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at'
+    ).run(modelSettingKey(providerId), model, new Date().toISOString());
+  } catch {
+    // Model selection is recoverable; the credential remains in Credential Manager.
+  }
+}
+
+function deleteSavedProviderModel(providerId: string): void {
+  try {
+    companionDatabase?.raw.prepare('DELETE FROM settings WHERE key = ?').run(modelSettingKey(providerId));
+  } catch {
+    // Ignore cleanup failure.
+  }
+}
 
 function configureFileLogging(): void {
   const logFile = join(app.getPath("userData"), "logs", "companion.log");
@@ -111,9 +151,10 @@ async function openStorage(): Promise<void> {
               if (key) {
                 const entry = getProviderEntry(id);
                 if (entry) {
-                  router.register(entry.factory(key), 100, entry.models[0]);
+                  const model = getSavedProviderModel(id) || entry.models[0];
+                  router.register(entry.factory(key), 100, model);
                   if (!defaultModel && entry.models.length > 0) {
-                    defaultModel = entry.models[0] ?? '';
+                    defaultModel = model ?? '';
                   }
                 } else {
                   const custom = decodeCustomProviderId(id);
@@ -178,7 +219,7 @@ async function checkCredentialStore(): Promise<void> {
   }
 }
 
-  async function registerProviderKey(providerId: string, apiKey: string): Promise<{ valid: boolean; error?: string; model?: string }> {
+  async function registerProviderKey(providerId: string, apiKey: string, requestedModel?: string): Promise<{ valid: boolean; error?: string; model?: string }> {
     if (!providerRouter || !credentialStore) throw new Error('Storage unavailable');
     const pipeline = new DefaultOnboardingPipeline();
     const validation = await pipeline.validateKey(providerId, apiKey);
@@ -186,9 +227,12 @@ async function checkCredentialStore(): Promise<void> {
     const entry = getProviderEntry(providerId);
     if (!entry) return { valid: false, error: 'Unknown provider' };
     await credentialStore.set(providerId, apiKey);
-    providerRouter.register(entry.factory(apiKey), 100, entry.models[0]);
-    if (!defaultModel && entry.models.length > 0) {
-      defaultModel = entry.models[0] ?? '';
+    const model = requestedModel?.trim() || entry.models[0];
+    providerRouter.register(entry.factory(apiKey), 100, model);
+    if (model) saveProviderModel(providerId, model);
+    const registeredModels = providerRouter.getProviders().map((registration) => registration.model);
+    if ((!defaultModel || !registeredModels.includes(defaultModel)) && entry.models.length > 0) {
+      defaultModel = model ?? entry.models[0] ?? '';
       conversationEngine?.setDefaultModel(defaultModel);
     }
     return { valid: true, model: defaultModel };
@@ -330,15 +374,21 @@ function registerIpc(): void {
       return pipeline.validateKey(providerId, apiKey);
     });
 
-    ipcMain.handle(ipcChannels.credentialsSet, async (event, suppliedToken: unknown, providerId: string, apiKey: string): Promise<unknown> => {
+    ipcMain.handle(ipcChannels.providersDiscoverModels, async (event, suppliedToken: unknown, providerId: string, apiKey: string): Promise<unknown> => {
       assertTrustedSender(event, suppliedToken);
-      return registerProviderKey(providerId, apiKey);
+      return discoverProviderModels(providerId, apiKey);
+    });
+
+    ipcMain.handle(ipcChannels.credentialsSet, async (event, suppliedToken: unknown, providerId: string, apiKey: string, model?: string): Promise<unknown> => {
+      assertTrustedSender(event, suppliedToken);
+      return registerProviderKey(providerId, apiKey, model);
     });
 
     ipcMain.handle(ipcChannels.credentialsDelete, async (event, suppliedToken: unknown, providerId: string): Promise<unknown> => {
       assertTrustedSender(event, suppliedToken);
       if (!credentialStore || !providerRouter) throw new Error('Storage unavailable');
       await credentialStore.delete(providerId);
+      deleteSavedProviderModel(providerId);
       providerRouter.unregister(providerId);
       return { ok: true };
     });
@@ -517,7 +567,14 @@ async function createWindow(): Promise<void> {
 
 app.whenReady().then(async () => {
   app.setAppUserModelId("com.kkc36.companion");
+  session.defaultSession.setPermissionRequestHandler((_webContents, permission, callback) => {
+    callback(permission === "media");
+  });
+  session.defaultSession.setPermissionCheckHandler((_webContents, permission) => (
+    permission === "media"
+  ));
   configureFileLogging();
+  configureProviderNetwork();
   await openStorage();
   await checkCredentialStore();
   registerIpc();

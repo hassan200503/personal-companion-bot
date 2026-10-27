@@ -1,5 +1,5 @@
-import { describe, it, expect } from 'vitest';
-import { decodeCustomProviderId, encodeCustomProviderId, getProviderCatalog, getProviderEntry, getProvidersByMode, getProviderModels, validateKeyFormat } from './catalog.js';
+import { describe, it, expect, vi } from 'vitest';
+import { decodeCustomProviderId, discoverProviderModels, encodeCustomProviderId, getProviderCatalog, getProviderEntry, getProvidersByMode, getProviderModels, validateKeyFormat } from './catalog.js';
 
 describe('ProviderCatalog', () => {
   it('returns all providers', () => {
@@ -34,6 +34,36 @@ describe('ProviderCatalog', () => {
   it('returns empty models for unknown provider', () => {
     const models = getProviderModels('nonexistent');
     expect(models).toHaveLength(0);
+  });
+
+  it('discovers and filters free OpenRouter models', async () => {
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      data: [
+        { id: 'free/model:free', name: 'Free model', pricing: { prompt: '0', completion: '0' } },
+        { id: 'paid/model', name: 'Paid model', pricing: { prompt: '0.001', completion: '0.002' } },
+      ],
+    }), { status: 200, headers: { 'content-type': 'application/json' } }));
+    try {
+      const models = await discoverProviderModels('openrouter', 'sk-or-test');
+      expect(models.map((model) => model.id)).toEqual(['free/model:free']);
+      expect(models[0]?.free).toBe(true);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  it('discovers live OpenAI-compatible provider models', async () => {
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      data: [{ id: 'openai/gpt-oss-120b', context_window: 32768, supported_parameters: ['tools'] }],
+    }), { status: 200, headers: { 'content-type': 'application/json' } }));
+    try {
+      const models = await discoverProviderModels('groq', 'gsk_test');
+      expect(models[0]).toMatchObject({ id: 'openai/gpt-oss-120b', supportsTools: true, free: true });
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
   });
 
   it('validates key format - valid', () => {
