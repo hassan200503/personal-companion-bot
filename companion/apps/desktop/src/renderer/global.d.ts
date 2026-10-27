@@ -49,6 +49,9 @@ declare global {
        osExecuteTool(toolName: string, input: unknown, confirmationHash?: string): Promise<any>;
        osTryCommand(text: string): Promise<any>;
        osConfirmTool(actionHash: string): Promise<any>;
+        voiceStart(): Promise<any>;
+        voiceStop(): Promise<any>;
+        onVoiceTranscript(cb: (payload: { text: string; final: boolean }) => void): () => void;
     };
   }
 }

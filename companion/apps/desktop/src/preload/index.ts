@@ -30,6 +30,13 @@ const api = Object.freeze({
   osExecuteTool: (toolName: string, input: unknown, confirmationHash?: string): Promise<unknown> => ipcRenderer.invoke(ipcChannels.osExecuteTool, sessionToken, toolName, input, confirmationHash),
   osTryCommand: (text: string): Promise<unknown> => ipcRenderer.invoke(ipcChannels.osTryCommand, sessionToken, text),
   osConfirmTool: (actionHash: string): Promise<unknown> => ipcRenderer.invoke(ipcChannels.osConfirmTool, sessionToken, actionHash),
+  voiceStart: (): Promise<unknown> => ipcRenderer.invoke(ipcChannels.voiceStart, sessionToken),
+  voiceStop: (): Promise<unknown> => ipcRenderer.invoke(ipcChannels.voiceStop, sessionToken),
+  onVoiceTranscript: (cb: (payload: { text: string; final: boolean }) => void): (() => void) => {
+    const handler = (_e: any, payload: any) => cb(payload);
+    ipcRenderer.on(ipcChannels.voiceTranscript, handler);
+    return () => ipcRenderer.removeListener(ipcChannels.voiceTranscript, handler);
+  },
 });
 
 contextBridge.exposeInMainWorld("companion", api);

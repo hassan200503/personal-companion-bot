@@ -51,7 +51,6 @@ export default function App() {
   const [interimTranscript, setInterimTranscript] = useState('');
   const [voiceError, setVoiceError] = useState('');
   const [speaking, setSpeaking] = useState(false);
-  const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
   const voiceModeRef = useRef(false);
   const voiceProcessingRef = useRef(false);
   const speakingRef = useRef(false);
@@ -73,12 +72,20 @@ export default function App() {
 
   useEffect(() => {
     void loadAll();
-  }, []);
-
-  useEffect(() => () => {
-    voiceModeRef.current = false;
-    recognitionRef.current?.abort();
-    window.speechSynthesis?.cancel();
+    const unsubscribe = window.companion.onVoiceTranscript((payload) => {
+      const text = payload?.text?.trim();
+      if (!text) return;
+      if (!voiceModeRef.current) return;
+      setInterimTranscript('');
+      setVoiceState('processing');
+      voiceProcessingRef.current = true;
+      void sendMessage(text, true);
+    });
+    return () => {
+      unsubscribe();
+      voiceModeRef.current = false;
+      window.speechSynthesis?.cancel();
+    };
   }, []);
 
   async function runOnboarding() {
@@ -226,50 +233,24 @@ export default function App() {
   }
 
   function speakReply(content: string): void {
-    if (!('speechSynthesis' in window) || !content.trim()) {
-      setVoiceError('Voice output is not available in this Electron runtime.');
-      return;
-    }
-    recognitionRef.current?.stop();
-    window.speechSynthesis.cancel();
-    const utterance = new SpeechSynthesisUtterance(content);
-    utterance.lang = navigator.language || 'en-US';
-    utterance.rate = 0.95;
-    utterance.pitch = 1;
-    const voices = window.speechSynthesis.getVoices();
-    utterance.voice = voices.find((voice) => voice.lang.toLowerCase().startsWith(utterance.lang.slice(0, 2).toLowerCase()))
-      || voices.find((voice) => voice.lang.toLowerCase().startsWith('en'))
-      || voices[0]
-      || null;
-    utterance.onstart = () => { speakingRef.current = true; setSpeaking(true); setVoiceState('processing'); };
-    utterance.onend = () => {
+    if (!content.trim()) return;
+    speakingRef.current = true;
+    setSpeaking(true);
+    setVoiceState('processing');
+    window.companion.osTryCommand(`speak ${content}`).then(() => {
       speakingRef.current = false;
       setSpeaking(false);
       if (voiceModeRef.current) {
         setVoiceState('listening');
-        window.setTimeout(() => {
-          if (voiceModeRef.current && !voiceProcessingRef.current) {
-            try { recognitionRef.current?.start(); } catch { /* recognition is already starting */ }
-          }
-        }, 350);
       }
-    };
-    utterance.onerror = () => {
+    }).catch(() => {
       speakingRef.current = false;
       setSpeaking(false);
       setVoiceError('Voice output failed. Check that Windows has an installed speech voice.');
-      if (voiceModeRef.current) {
-        setVoiceState('listening');
-        window.setTimeout(() => {
-          if (voiceModeRef.current && !voiceProcessingRef.current) {
-            try { recognitionRef.current?.start(); } catch { /* recognition is already starting */ }
-          }
-        }, 350);
-      }
-    };
-    window.speechSynthesis.resume();
-    window.speechSynthesis.speak(utterance);
+      if (voiceModeRef.current) setVoiceState('listening');
+    });
   }
+
 
   async function sendMessage(content: string, speak = false): Promise<void> {
     if (!content.trim() || !activeConv) return;
@@ -317,68 +298,18 @@ export default function App() {
       setVoiceError('Create or select a chat before starting live listening.');
       return;
     }
-    const Recognition = window.SpeechRecognition ?? window.webkitSpeechRecognition;
-    if (!Recognition) {
-      setVoiceState('unsupported');
-      setVoiceError('Live speech recognition is not available in this Electron runtime.');
-      return;
-    }
     setVoiceError('');
     voiceModeRef.current = true;
     setVoiceMode(true);
-    const recognition = new Recognition();
-    recognition.continuous = false;
-    recognition.interimResults = true;
-    recognition.lang = navigator.language || 'en-US';
-    recognition.onstart = () => setVoiceState('listening');
-    recognition.onend = () => {
-      if (voiceModeRef.current && !speakingRef.current && !voiceProcessingRef.current) {
-        window.setTimeout(() => {
-          if (voiceModeRef.current && !speakingRef.current && !voiceProcessingRef.current) {
-            try { recognition.start(); } catch { /* recognition is already starting */ }
-          }
-        }, 350);
-      }
-    };
-    recognition.onerror = (event) => {
-      if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {
-        voiceModeRef.current = false;
-        setVoiceMode(false);
-        setVoiceState('off');
-        setVoiceError('Microphone permission was denied. Enable it in Windows/Electron settings to listen.');
-      } else if (event.error === 'audio-capture') {
-        voiceModeRef.current = false;
-        setVoiceMode(false);
-        setVoiceState('off');
-        setVoiceError('No microphone was found. Connect a microphone and try again.');
-      } else if (event.error === 'network') {
-        setVoiceError('Speech recognition needs a network connection. Check the connection and try again.');
-      } else if (event.error === 'no-speech') {
-        setVoiceError('I did not hear speech. Try speaking closer to the microphone.');
-      } else if (event.error !== 'aborted') {
-        setVoiceError(`Speech recognition: ${event.error}`);
-      }
-    };
-    recognition.onresult = (event) => {
-      let finalText = '';
-      let interim = '';
-      for (let index = event.resultIndex; index < event.results.length; index += 1) {
-        const text = event.results[index]?.[0]?.transcript ?? '';
-        if (event.results[index]?.isFinal) finalText += text;
-        else interim += text;
-      }
-      setInterimTranscript(interim);
-      if (finalText.trim()) {
-        setInterimTranscript('');
-        setVoiceState('processing');
-        voiceProcessingRef.current = true;
-        recognition.stop();
-        void sendMessage(finalText.trim(), true);
-      }
-    };
-    recognitionRef.current = recognition;
     setVoiceState('starting');
-    try { recognition.start(); } catch (error) { setVoiceError(String(error)); }
+    window.companion.voiceStart().then(() => {
+      setVoiceState('listening');
+    }).catch((e) => {
+      setVoiceError(String(e));
+      voiceModeRef.current = false;
+      setVoiceMode(false);
+      setVoiceState('off');
+    });
   }
 
   function stopListening(): void {
@@ -387,11 +318,12 @@ export default function App() {
     setVoiceMode(false);
     setVoiceState('off');
     setInterimTranscript('');
-    recognitionRef.current?.stop();
+    void window.companion.voiceStop();
     window.speechSynthesis?.cancel();
     speakingRef.current = false;
     setSpeaking(false);
   }
+
 
   return (
     <div className="app-shell">

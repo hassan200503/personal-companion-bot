@@ -1,6 +1,7 @@
 import { app, BrowserWindow, ipcMain, Tray, Menu, nativeImage, shell, net, session, type IpcMainInvokeEvent } from "electron";
 import { randomUUID } from "node:crypto";
-import { appendFileSync, mkdirSync } from "node:fs";
+import { spawn, type ChildProcess } from 'node:child_process';
+import { appendFileSync, mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import {
   createLogger,
@@ -62,6 +63,7 @@ let credentialStore: CredentialStore | null = null;
 let toolRegistry: DefaultToolRegistry | null = null;
 let toolExecutor: DefaultToolExecutor | null = null;
 let confirmationManager: InMemoryConfirmationManager | null = null;
+let voiceProcess: ChildProcess | null = null;
 let defaultModel = '';
 let tray: Tray | null = null;
 let backgroundScheduler: Scheduler | null = null;
@@ -416,6 +418,54 @@ function registerIpc(): void {
     assertTrustedSender(event, suppliedToken);
     return backupStatus(backupDir ?? "");
   });
+  // Voice (offline STT via Windows Speech)
+  ipcMain.handle(ipcChannels.voiceStart, (event, suppliedToken: unknown): unknown => {
+    assertTrustedSender(event, suppliedToken);
+    if (voiceProcess) return { started: true };
+    const script = [
+      'Add-Type -AssemblyName System.Speech',
+      '$r = New-Object System.Speech.Recognition.SpeechRecognitionEngine',
+      '$r.SetInputToDefaultAudioDevice()',
+      '$g = New-Object System.Speech.Recognition.DictationGrammar',
+      '$r.LoadGrammar($g)',
+      'Register-ObjectEvent -InputObject $r -EventName SpeechRecognized -Action {',
+      '  param($sender,$e)',
+      '  Write-Output ("RECOGNIZED:" + $e.Result.Text)',
+      '  [Console]::Out.Flush()',
+      '} | Out-Null',
+      '$r.RecognizeAsync([System.Speech.Recognition.RecognizeMode]::Multiple)',
+      'Write-Host "LISTENING"',
+      'while ($true) { Start-Sleep -Milliseconds 200 }',
+    ].join('\n');
+    const scriptPath = join(app.getPath('temp'), 'companion-listen.ps1');
+    writeFileSync(scriptPath, script, 'utf8');
+    voiceProcess = spawn('powershell', ['-ExecutionPolicy', 'Bypass', '-File', scriptPath], { windowsHide: true });
+    voiceProcess.stdout?.on('data', (d: Buffer) => {
+      const lines = d.toString().split(/\r?\n/);
+      for (const line of lines) {
+        const m = line.match(/^RECOGNIZED:(.*)$/);
+        if (m) {
+          const text = (m[1] ?? '').trim();
+          if (text) {
+            const win = BrowserWindow.fromWebContents(event.sender) ?? mainWindow;
+            win?.webContents.send(ipcChannels.voiceTranscript, { text, final: true });
+          }
+        }
+      }
+    });
+    voiceProcess.on('exit', () => { voiceProcess = null; });
+    return { started: true };
+  });
+
+  ipcMain.handle(ipcChannels.voiceStop, (event, suppliedToken: unknown): unknown => {
+    assertTrustedSender(event, suppliedToken);
+    if (voiceProcess) {
+      try { voiceProcess.kill(); } catch { /* ignore */ }
+      voiceProcess = null;
+    }
+    return { stopped: true };
+  });
+
   // OS control
   ipcMain.handle(ipcChannels.osListTools, (event, suppliedToken: unknown): unknown => {
     assertTrustedSender(event, suppliedToken);
@@ -449,8 +499,12 @@ function registerIpc(): void {
     if (lower.startsWith('open ')) { toolName = 'os.open'; input = { target: trimmed.slice(5).trim() }; }
     else if (lower.startsWith('play ')) { toolName = 'os.play'; input = { target: trimmed.slice(5).trim() }; }
     else if (lower.startsWith('speak ')) { toolName = 'os.speak'; input = { text: trimmed.slice(6).trim() }; }
+    else if (lower.startsWith('say ')) { toolName = 'os.speak'; input = { text: trimmed.slice(4).trim() }; }
     else if (lower.startsWith('call ')) { toolName = 'os.call'; input = { number: trimmed.slice(5).trim() }; }
     else if (lower.startsWith('run ')) { toolName = 'os.run'; input = { command: trimmed.slice(4).trim() }; }
+    else if (lower.startsWith('screenshot') || lower === 'take screenshot' || lower.startsWith('capture screen')) { toolName = 'os.screenshot'; input = {}; }
+    else if (lower.startsWith('camera') || lower.startsWith('take photo') || lower.startsWith('take picture') || lower.startsWith('take video') || lower.startsWith('record video')) { toolName = 'os.camera'; input = { mode: lower.includes('video') ? 'video' : 'photo' }; }
+    else if (lower.startsWith('photo')) { toolName = 'os.camera'; input = { mode: 'photo' }; }
     if (!toolName) return { handled: false };
     const cm = confirmationManager!;
     const ctx = {

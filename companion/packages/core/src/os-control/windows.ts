@@ -1,49 +1,136 @@
-import { execFile, spawn } from 'node:child_process';
-import { promisify } from 'node:util';
+import { spawn } from 'node:child_process';
 
-const execFileAsync = promisify(execFile);
+export async function openTarget(target: string): Promise<{ opened: boolean; resolved?: string; error?: string }> {
+  const t = target.trim();
+  if (!t) return { opened: false, error: 'empty_target' };
 
-function isWindows(): boolean {
-  return process.platform === 'win32';
-}
-
-export async function openTarget(target: string): Promise<void> {
-  if (!target || typeof target !== 'string') throw new Error('target required');
-  if (isWindows()) {
-    await new Promise<void>((resolve, reject) => {
-      const child = spawn('cmd', ['/c', 'start', '', target], { detached: true, stdio: 'ignore', windowsHide: true });
-      child.on('error', reject);
-      child.unref();
-      setTimeout(resolve, 150);
+  const runStart = async (x: string) => {
+    return new Promise<{ ok: boolean; error?: string }>((resolve) => {
+      const child = spawn('cmd', ['/c', 'start', '', x], { windowsHide: true });
+      let err = '';
+      child.stderr.on('data', (d) => { err += d.toString(); });
+      child.on('close', (code) => resolve(code === 0 ? { ok: true } : { ok: false, error: err.trim() || `exit ${code}` }));
+      child.on('error', (e) => resolve({ ok: false, error: e.message }));
     });
-    return;
+  };
+
+  // URL or existing file path
+  if (/^[a-z][a-z0-9+.-]*:/i.test(t) || (await import('node:fs')).existsSync(t)) {
+    const r = await runStart(t);
+    return r.ok ? { opened: true, resolved: t } : { opened: false, error: r.error };
   }
-  // fallback for non-windows dev/test
-  await execFileAsync('xdg-open', [target]).catch(() => undefined);
+
+  const aliases: Record<string, string> = {
+    notepad: 'notepad', calculator: 'calc', calc: 'calc', paint: 'mspaint', mspaint: 'mspaint',
+    explorer: 'explorer', files: 'explorer', camera: 'microsoft.windows.camera:', photos: 'ms-photos:',
+    settings: 'ms-settings:', store: 'ms-windows-store:', whatsapp: 'whatsapp:', browser: 'https://www.google.com',
+    edge: 'msedge', chrome: 'chrome', youtube: 'https://www.youtube.com',
+  };
+  const alias = aliases[t.toLowerCase()];
+  if (alias) {
+    const r = await runStart(alias);
+    if (r.ok) return { opened: true, resolved: alias };
+  }
+
+  // direct executable/app name
+  let r = await runStart(t);
+  if (r.ok) return { opened: true, resolved: t };
+
+  // Resolve via PowerShell Get-StartApps
+  try {
+    const { execFileSync } = await import('node:child_process');
+    const out = execFileSync('powershell', [
+      '-NoProfile', '-Command',
+      `Get-StartApps | Where-Object { $_.Name -like '*${t.replace(/'/g, "''")}*' } | Select-Object -First 1 -ExpandProperty AppID`,
+    ], { encoding: 'utf8', windowsHide: true, timeout: 8000 });
+    const appId = out.trim();
+    if (appId) {
+      const r2 = await runStart(`shell:AppsFolder\\${appId}`);
+      if (r2.ok) return { opened: true, resolved: appId };
+    }
+  } catch { /* ignore */ }
+
+  return { opened: false, error: r.error ?? 'unable_to_open' };
 }
 
-export async function playMedia(target: string): Promise<void> {
-  // Default media player via OS open
-  await openTarget(target);
+export async function playMedia(target: string): Promise<{ played: boolean; resolved?: string; error?: string }> {
+  let t = target.trim();
+  if (!t) return { played: false, error: 'empty_target' };
+
+  const { existsSync } = await import('node:fs');
+  const pathMod = await import('node:path');
+
+  if (!existsSync(t)) {
+    const roots = [
+      process.env.USERPROFILE ? pathMod.join(process.env.USERPROFILE, 'Music') : '',
+      process.env.USERPROFILE ? pathMod.join(process.env.USERPROFILE, 'Videos') : '',
+      process.env.USERPROFILE ? pathMod.join(process.env.USERPROFILE, 'Downloads') : '',
+    ].filter(Boolean);
+    let found: string | null = null;
+    const walk = (dir: string, depth: number): string | null => {
+      if (depth < 0) return null;
+      try {
+        const { readdirSync } = require('node:fs');
+        for (const entry of readdirSync(dir, { withFileTypes: true })) {
+          const full = pathMod.join(dir, entry.name);
+          if (entry.isFile() && entry.name.toLowerCase().includes(t.toLowerCase())) return full;
+          if (entry.isDirectory()) {
+            const r = walk(full, depth - 1);
+            if (r) return r;
+          }
+        }
+      } catch { /* ignore */ }
+      return null;
+    };
+    for (const root of roots) {
+      if (!existsSync(root)) continue;
+      found = walk(root, 2);
+      if (found) break;
+    }
+    if (found) t = found;
+    else return { played: false, error: 'file_not_found' };
+  }
+
+  const r = await (async () => {
+    return new Promise<{ ok: boolean; error?: string }>((resolve) => {
+      const child = spawn('cmd', ['/c', 'start', '', t], { windowsHide: true });
+      let err = '';
+      child.stderr.on('data', (d) => { err += d.toString(); });
+      child.on('close', (code) => resolve(code === 0 ? { ok: true } : { ok: false, error: err.trim() || `exit ${code}` }));
+      child.on('error', (e) => resolve({ ok: false, error: e.message }));
+    });
+  })();
+  return r.ok ? { played: true, resolved: t } : { played: false, error: r.error };
 }
 
-export async function speakText(text: string, voice?: string): Promise<void> {
-  if (!text || typeof text !== 'string') throw new Error('text required');
+export async function speakText(text: string, voice?: string): Promise<{ spoken: boolean; error?: string }> {
   const safe = text.replace(/'/g, "''").replace(/\r?\n/g, ' ');
   const voiceCmd = voice ? `$s.SelectVoice('${voice.replace(/'/g, "''")}');` : '';
   const script = `Add-Type -AssemblyName System.Speech; $s = New-Object System.Speech.Synthesis.SpeechSynthesizer; ${voiceCmd} $s.Speak('${safe}');`;
-  if (isWindows()) {
-    await execFileAsync('powershell', ['-NoProfile', '-NonInteractive', '-Command', script], { timeout: 60_000 });
-    return;
-  }
-  // non-windows: best-effort via espeak if available
-  try { await execFileAsync('espeak', [text]); } catch { /* ignore */ }
+  return new Promise((resolve) => {
+    const child = spawn('powershell', ['-NoProfile', '-Command', script], { windowsHide: true });
+    let err = '';
+    child.stderr.on('data', (d) => { err += d.toString(); });
+    child.on('close', (code) => {
+      if (code === 0) resolve({ spoken: true });
+      else resolve({ spoken: false, error: err.trim() || `exit ${code}` });
+    });
+    child.on('error', (e) => resolve({ spoken: false, error: e.message }));
+  });
 }
 
-export async function makeCall(number: string): Promise<void> {
-  if (!number || typeof number !== 'string') throw new Error('number required');
+export async function makeCall(number: string): Promise<{ called: boolean; error?: string }> {
   const cleaned = number.replace(/[^\d+]/g, '');
-  await openTarget(`tel:${cleaned}`);
+  const r = await (async () => {
+    return new Promise<{ ok: boolean; error?: string }>((resolve) => {
+      const child = spawn('cmd', ['/c', 'start', '', `tel:${cleaned}`], { windowsHide: true });
+      let err = '';
+      child.stderr.on('data', (d) => { err += d.toString(); });
+      child.on('close', (code) => resolve(code === 0 ? { ok: true } : { ok: false, error: err.trim() || `exit ${code}` }));
+      child.on('error', (e) => resolve({ ok: false, error: e.message }));
+    });
+  })();
+  return r.ok ? { called: true } : { called: false, error: r.error };
 }
 
 export interface RunCommandResult {
@@ -74,3 +161,34 @@ export async function runCommand(command: string, args: string[] = [], timeoutMs
     });
   });
 }
+export async function takeScreenshot(): Promise<{ ok: boolean; path?: string; error?: string }> {
+  const dir = process.env.USERPROFILE ? `${process.env.USERPROFILE}\\Pictures\\Screenshots` : 'C:\\Screenshots';
+  const ts = new Date().toISOString().replace(/[:.]/g, '-');
+  const file = `${dir}\\screenshot-${ts}.png`;
+  const script = [
+    'Add-Type -AssemblyName System.Windows.Forms',
+    'Add-Type -AssemblyName System.Drawing',
+    `$d = '${dir.replace(/'/g, "''")}'`,
+    'if (-not (Test-Path $d)) { New-Item -ItemType Directory -Force -Path $d | Out-Null }',
+    '$b = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds',
+    '$img = New-Object System.Drawing.Bitmap $b.Width, $b.Height',
+    '$g = [System.Drawing.Graphics]::FromImage($img)',
+    '$g.CopyFromScreen($b.Location, [System.Drawing.Point]::Empty, $b.Size)',
+    `$img.Save('${file.replace(/'/g, "''")}')`,
+    '$g.Dispose(); $img.Dispose()',
+    `Write-Output '${file.replace(/'/g, "''")}'`,
+  ].join('; ');
+  return new Promise((resolve) => {
+    const child = spawn('powershell', ['-NoProfile', '-Command', script], { windowsHide: true });
+    let out = '';
+    let err = '';
+    child.stdout.on('data', (d) => { out += d.toString(); });
+    child.stderr.on('data', (d) => { err += d.toString(); });
+    child.on('close', (code) => {
+      if (code === 0) resolve({ ok: true, path: out.trim() });
+      else resolve({ ok: false, error: err.trim() || `exit ${code}` });
+    });
+    child.on('error', (e) => resolve({ ok: false, error: e.message }));
+  });
+}
+

@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import type { ToolDefinition } from '../tools/contracts.js';
-import { openTarget, playMedia, speakText, makeCall, runCommand } from './windows.js';
+import { openTarget, playMedia, speakText, makeCall, runCommand, takeScreenshot } from './windows.js';
 
 export function createOsOpenTool(): ToolDefinition<{ target: string }, { opened: boolean }> {
   return {
@@ -18,8 +18,8 @@ export function createOsOpenTool(): ToolDefinition<{ target: string }, { opened:
     audit: 'metadata',
     platforms: ['all'],
     execute: async (_ctx, input) => {
-      await openTarget(input.target);
-      return { opened: true };
+      const r = await openTarget(input.target);
+      return { opened: r.opened };
     },
   };
 }
@@ -40,8 +40,8 @@ export function createOsPlayTool(): ToolDefinition<{ target: string }, { played:
     audit: 'metadata',
     platforms: ['all'],
     execute: async (_ctx, input) => {
-      await playMedia(input.target);
-      return { played: true };
+      const r = await playMedia(input.target);
+      return { played: r.played };
     },
   };
 }
@@ -62,8 +62,8 @@ export function createOsSpeakTool(): ToolDefinition<{ text: string; voice?: stri
     audit: 'none',
     platforms: ['all'],
     execute: async (_ctx, input) => {
-      await speakText(input.text, input.voice);
-      return { spoken: true };
+      const r = await speakText(input.text, input.voice);
+      return { spoken: r.spoken };
     },
   };
 }
@@ -85,8 +85,8 @@ export function createOsCallTool(): ToolDefinition<{ number: string }, { initiat
     audit: 'full',
     platforms: ['all'],
     execute: async (_ctx, input) => {
-      await makeCall(input.number);
-      return { initiated: true };
+      const r = await makeCall(input.number);
+      return { initiated: r.called };
     },
   };
 }
@@ -113,6 +113,50 @@ export function createOsRunTool(): ToolDefinition<{ command: string; args?: stri
   };
 }
 
+
+export function createOsScreenshotTool(): ToolDefinition<{}, { ok: boolean; path?: string }> {
+  return {
+    name: 'os.screenshot',
+    version: '1.0.0',
+    description: 'Capture a screenshot of the primary screen and save it to Pictures/Screenshots.',
+    inputSchema: z.object({}),
+    outputSchema: z.object({ ok: z.boolean(), path: z.string().optional() }),
+    requiredPermissions: ['os.media'],
+    dataClassification: 'personal',
+    riskClass: 1,
+    reversible: true,
+    timeoutMs: 15_000,
+    cancellable: true,
+    audit: 'metadata',
+    platforms: ['all'],
+    execute: async () => {
+      return takeScreenshot();
+    },
+  };
+}
+
+export function createOsCameraTool(): ToolDefinition<{ mode?: 'photo' | 'video' }, { opened: boolean }> {
+  return {
+    name: 'os.camera',
+    version: '1.0.0',
+    description: 'Open the system camera app (photo or video mode).',
+    inputSchema: z.object({ mode: z.enum(['photo', 'video']).optional() }),
+    outputSchema: z.object({ opened: z.boolean() }),
+    requiredPermissions: ['os.open'],
+    dataClassification: 'personal',
+    riskClass: 1,
+    reversible: true,
+    timeoutMs: 10_000,
+    cancellable: true,
+    audit: 'metadata',
+    platforms: ['all'],
+    execute: async (_ctx, _input) => {
+      const r = await openTarget('camera');
+      return { opened: r.opened };
+    },
+  };
+}
+
 export function createOsControlTools(): ToolDefinition<unknown, unknown>[] {
   return [
     createOsOpenTool() as ToolDefinition<unknown, unknown>,
@@ -120,5 +164,7 @@ export function createOsControlTools(): ToolDefinition<unknown, unknown>[] {
     createOsSpeakTool() as ToolDefinition<unknown, unknown>,
     createOsCallTool() as ToolDefinition<unknown, unknown>,
     createOsRunTool() as ToolDefinition<unknown, unknown>,
+    createOsScreenshotTool() as ToolDefinition<unknown, unknown>,
+    createOsCameraTool() as ToolDefinition<unknown, unknown>,
   ];
 }

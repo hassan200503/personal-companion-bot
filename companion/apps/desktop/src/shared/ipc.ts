@@ -50,4 +50,7 @@ export const ipcChannels = {
   osExecuteTool: 'os:executeTool',
   osTryCommand: 'os:tryCommand',
   osConfirmTool: 'os:confirmTool',
+  voiceStart: 'voice:start',
+  voiceStop: 'voice:stop',
+  voiceTranscript: 'voice:transcript',
 } as const;
