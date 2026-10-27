@@ -24,6 +24,10 @@ const api = Object.freeze({
   credentialsSet: (providerId: string, apiKey: string) : Promise<unknown> => ipcRenderer.invoke(ipcChannels.credentialsSet, sessionToken, providerId, apiKey),
   credentialsDelete: (providerId: string) : Promise<unknown> => ipcRenderer.invoke(ipcChannels.credentialsDelete, sessionToken, providerId),
   providersAddCustom: (config: { name: string; baseUrl: string; model: string }, apiKey: string): Promise<unknown> => ipcRenderer.invoke(ipcChannels.providersAddCustom, sessionToken, config, apiKey),
+  osListTools: (): Promise<unknown> => ipcRenderer.invoke(ipcChannels.osListTools, sessionToken),
+  osExecuteTool: (toolName: string, input: unknown, confirmationHash?: string): Promise<unknown> => ipcRenderer.invoke(ipcChannels.osExecuteTool, sessionToken, toolName, input, confirmationHash),
+  osTryCommand: (text: string): Promise<unknown> => ipcRenderer.invoke(ipcChannels.osTryCommand, sessionToken, text),
+  osConfirmTool: (actionHash: string): Promise<unknown> => ipcRenderer.invoke(ipcChannels.osConfirmTool, sessionToken, actionHash),
 });
 
 contextBridge.exposeInMainWorld("companion", api);

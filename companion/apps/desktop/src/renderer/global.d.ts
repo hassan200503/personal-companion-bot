@@ -44,6 +44,10 @@ declare global {
       credentialsSet(providerId: string, apiKey: string): Promise<any>;
       credentialsDelete(providerId: string): Promise<any>;
       providersAddCustom(config: { name: string; baseUrl: string; model: string }, apiKey: string): Promise<any>;
+       osListTools(): Promise<any>;
+       osExecuteTool(toolName: string, input: unknown, confirmationHash?: string): Promise<any>;
+       osTryCommand(text: string): Promise<any>;
+       osConfirmTool(actionHash: string): Promise<any>;
     };
   }
 }

@@ -27,3 +27,5 @@ export * from './onboarding/index.js';
 export * from './tools/index.js';
 export * from './background/index.js';
 export * from './privacy/index.js';
+export { createOsControlTools, createOsOpenTool, createOsPlayTool, createOsSpeakTool, createOsCallTool, createOsRunTool } from './os-control/tools.js';
+export * from './os-control/windows.js';

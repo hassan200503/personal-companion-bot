@@ -204,6 +204,20 @@ export default function App() {
     setBusy(true);
     setError('');
     try {
+      // OS control natural-language commands
+      try {
+        const osResult: any = await window.companion.osTryCommand(content);
+        if (osResult?.handled) {
+          const summary = osResult.result?.status === 'needs_confirmation'
+            ? `This action needs confirmation. Action hash: ${osResult.result.actionHash}`
+            : `OS action ${osResult.toolName}: ${JSON.stringify(osResult.result?.result ?? osResult.result)}`;
+          const userMsg = { id: crypto.randomUUID(), role: 'user', content, createdAt: new Date().toISOString() };
+          const assistantMsg = { id: crypto.randomUUID(), role: 'assistant', content: summary, createdAt: new Date().toISOString() };
+          setMessages((prev) => [...prev, userMsg, assistantMsg]);
+          if (speak) speakReply(summary);
+          return;
+        }
+      } catch { /* fall through to normal chat */ }
       const userMsg = { id: crypto.randomUUID(), role: 'user', content, createdAt: new Date().toISOString() };
       setMessages((prev) => [...prev, userMsg]);
       const result: any = await window.companion.chatSendMessage(activeConv, content);

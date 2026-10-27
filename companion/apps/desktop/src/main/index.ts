@@ -30,9 +30,14 @@ import {
   createCustomOpenAiProvider,
   encodeCustomProviderId,
   decodeCustomProviderId,
+  DefaultToolRegistry,
+  DefaultToolExecutor,
+  DefaultPolicyEngine,
+  InMemoryConfirmationManager,
 } from "@companion/core";
 import { ipcChannels, type AppInfo } from "../shared/ipc";
 import type { ConversationEngine, Scheduler, Conversation, ConversationMessage, CredentialStore } from "@companion/core";
+import { createOsControlTools } from "../../../../packages/core/src/os-control/tools.js";
 import { createDesktopCredentialStore, createDesktopKeyProtector } from "./storage/adapters";
 
 app.setName("Companion");
@@ -45,6 +50,9 @@ let onboardingEngine: DefaultOnboardingEngine | null = null;
 let conversationEngine: ConversationEngine | null = null;
 let providerRouter: ProviderRouter | null = null;
 let credentialStore: CredentialStore | null = null;
+let toolRegistry: DefaultToolRegistry | null = null;
+let toolExecutor: DefaultToolExecutor | null = null;
+let confirmationManager: InMemoryConfirmationManager | null = null;
 let defaultModel = '';
 let tray: Tray | null = null;
 let backgroundScheduler: Scheduler | null = null;
@@ -124,6 +132,17 @@ async function openStorage(): Promise<void> {
             memoryRetriever: createMemoryRetriever(memoryRepo),
             memoryRecorder: createMemoryRecorder(memoryRepo),
           });
+           // OS control tools
+           try {
+             const reg = new DefaultToolRegistry();
+             const cm = new InMemoryConfirmationManager();
+             for (const t of createOsControlTools()) reg.register(t);
+             toolRegistry = reg;
+             confirmationManager = cm;
+             toolExecutor = new DefaultToolExecutor(reg, new DefaultPolicyEngine(), cm);
+           } catch (e) {
+             logger.warn('os control init failed', { error: String(e) });
+           }
         backgroundScheduler = new DefaultScheduler();
         backgroundScheduler.register({
           id: 'reflection',
@@ -346,6 +365,67 @@ function registerIpc(): void {
   ipcMain.handle(ipcChannels.privacyBackupStatus, async (event, suppliedToken: unknown, backupDir?: string): Promise<unknown> => {
     assertTrustedSender(event, suppliedToken);
     return backupStatus(backupDir ?? "");
+  });
+  // OS control
+  ipcMain.handle(ipcChannels.osListTools, (event, suppliedToken: unknown): unknown => {
+    assertTrustedSender(event, suppliedToken);
+    if (!toolRegistry) return [];
+    return toolRegistry.list().map((t) => ({ name: t.name, version: t.version, description: t.description, riskClass: t.riskClass, requiresConfirmation: t.requiresConfirmation ?? false }));
+  });
+
+  ipcMain.handle(ipcChannels.osExecuteTool, async (event, suppliedToken: unknown, toolName: string, input: unknown, confirmationHash?: string): Promise<unknown> => {
+    assertTrustedSender(event, suppliedToken);
+    if (!toolExecutor || !confirmationManager) throw new Error('OS control unavailable');
+    const ctx = {
+      signal: new AbortController().signal,
+      platform: process.platform,
+      permissions: new Set(['os.open','os.media','os.speak','os.telephony','os.exec','memory.read','memory.write','drafts.write']),
+      audit: { record: () => {}, list: () => [] } as any,
+      confirmation: confirmationManager,
+      now: () => new Date(),
+      logger,
+    } as any;
+    const result = await toolExecutor.execute({ toolName, input, trust: 'trusted', confirmationHash }, ctx);
+    return result;
+  });
+
+  ipcMain.handle(ipcChannels.osTryCommand, async (event, suppliedToken: unknown, text: string): Promise<unknown> => {
+    assertTrustedSender(event, suppliedToken);
+    if (!toolExecutor || !toolRegistry) throw new Error('OS control unavailable');
+    const trimmed = String(text ?? '').trim();
+    const lower = trimmed.toLowerCase();
+    let toolName: string | null = null;
+    let input: any = {};
+    if (lower.startsWith('open ')) { toolName = 'os.open'; input = { target: trimmed.slice(5).trim() }; }
+    else if (lower.startsWith('play ')) { toolName = 'os.play'; input = { target: trimmed.slice(5).trim() }; }
+    else if (lower.startsWith('speak ')) { toolName = 'os.speak'; input = { text: trimmed.slice(6).trim() }; }
+    else if (lower.startsWith('call ')) { toolName = 'os.call'; input = { number: trimmed.slice(5).trim() }; }
+    else if (lower.startsWith('run ')) { toolName = 'os.run'; input = { command: trimmed.slice(4).trim() }; }
+    if (!toolName) return { handled: false };
+    const cm = confirmationManager!;
+    const ctx = {
+      signal: new AbortController().signal,
+      platform: process.platform,
+      permissions: new Set(['os.open','os.media','os.speak','os.telephony','os.exec','memory.read','memory.write','drafts.write']),
+      audit: { record: () => {}, list: () => [] } as any,
+      confirmation: cm,
+      now: () => new Date(),
+      logger,
+    } as any;
+    const result = await toolExecutor!.execute({ toolName, input, trust: 'trusted' }, ctx);
+    if (result.status === 'needs_confirmation' && result.actionHash) {
+      confirmationManager!.confirm(result.actionHash);
+      const result2 = await toolExecutor!.execute({ toolName, input, trust: 'trusted', confirmationHash: result.actionHash }, ctx);
+      return { handled: true, toolName, result: result2 };
+    }
+    return { handled: true, toolName, result };
+  });
+
+  ipcMain.handle(ipcChannels.osConfirmTool, async (event, suppliedToken: unknown, actionHash: string): Promise<unknown> => {
+    assertTrustedSender(event, suppliedToken);
+    if (!confirmationManager) throw new Error('OS control unavailable');
+    const ok = confirmationManager.confirm(actionHash);
+    return { confirmed: ok };
   });
 }
 
