@@ -283,3 +283,6 @@ input, textarea {
 @media (max-width: 780px) {
   .custom-grid { grid-template-columns: 1fr; }
 }
+.living-indicator { display: flex; align-items: center; gap: 8px; margin-top: 8px; font-size: 12px; color: #4ade80; }
+.living-indicator .pulse { width: 10px; height: 10px; border-radius: 50%; background: #4ade80; animation: pulse 1.5s infinite; }
+@keyframes pulse { 0% { transform: scale(1); opacity: 1; } 50% { transform: scale(1.6); opacity: 0.4; } 100% { transform: scale(1); opacity: 1; } }

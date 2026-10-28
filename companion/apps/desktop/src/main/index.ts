@@ -338,9 +338,12 @@ function registerIpc(): void {
     try {
       const row = companionDatabase?.raw.prepare('SELECT value FROM settings WHERE key = ?').get('memory.profile') as { value?: string } | undefined;
       const profile = row?.value ? JSON.parse(row.value) : {};
+      const ownerRow = companionDatabase?.raw.prepare('SELECT value FROM settings WHERE key = ?').get('owner.profile') as { value?: string } | undefined;
+      const owner = ownerRow?.value ? JSON.parse(ownerRow.value) : {};
       const base = 'You are Companion, a helpful private assistant.';
+      const ownerText = owner?.name ? `\\nOwner name: ${owner.name}. Address the user by name when appropriate.` : '';
       const profileText = Object.keys(profile).length ? `\\nUser profile: ${JSON.stringify(profile)}` : '';
-      conversationEngine.setSystemPrompt(base + profileText);
+      conversationEngine.setSystemPrompt(base + ownerText + profileText);
     } catch { /* ignore */ }
     const msg = await conversationEngine.sendMessage(conversationId, content, new AbortController().signal);
     // Reflect to update profile (best effort)
@@ -467,6 +470,28 @@ function registerIpc(): void {
       companionDatabase?.raw.prepare(
         'INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at'
       ).run('memory.profile', JSON.stringify(profile ?? {}), new Date().toISOString());
+      return { ok: true };
+    } catch (e) {
+      return { ok: false, error: String(e) };
+    }
+  });
+
+  ipcMain.handle(ipcChannels.memoryGetOwner, (event, suppliedToken: unknown): unknown => {
+    assertTrustedSender(event, suppliedToken);
+    try {
+      const row = companionDatabase?.raw.prepare('SELECT value FROM settings WHERE key = ?').get('owner.profile') as { value?: string } | undefined;
+      return row?.value ? JSON.parse(row.value) : {};
+    } catch {
+      return {};
+    }
+  });
+
+  ipcMain.handle(ipcChannels.memorySetOwner, (event, suppliedToken: unknown, owner: unknown): unknown => {
+    assertTrustedSender(event, suppliedToken);
+    try {
+      companionDatabase?.raw.prepare(
+        'INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at'
+      ).run('owner.profile', JSON.stringify(owner ?? {}), new Date().toISOString());
       return { ok: true };
     } catch (e) {
       return { ok: false, error: String(e) };

@@ -51,6 +51,7 @@ export default function App() {
   const [interimTranscript, setInterimTranscript] = useState('');
   const [voiceError, setVoiceError] = useState('');
   const [profile, setProfile] = useState<any>({});
+  const [owner, setOwner] = useState<any>({});
   const [speaking, setSpeaking] = useState(false);
   const voiceModeRef = useRef(false);
   const voiceProcessingRef = useRef(false);
@@ -67,6 +68,7 @@ export default function App() {
       setOnboarding(await window.companion.onboardingGetState());
       setConversations(await window.companion.chatListConversations());
       try { setProfile(await window.companion.memoryGetProfile()); } catch { /* ignore */ }
+      try { setOwner(await window.companion.memoryGetOwner()); } catch { /* ignore */ }
     } catch (e) {
       setError(String(e));
     }
@@ -89,6 +91,12 @@ export default function App() {
       window.speechSynthesis?.cancel();
     };
   }, []);
+
+  useEffect(() => {
+    if (activeConv && !voiceModeRef.current) {
+      startListening();
+    }
+  }, [activeConv]);
 
   async function runOnboarding() {
     setBusy(true);
@@ -367,6 +375,14 @@ export default function App() {
           <div className="eyebrow">Memory profile</div>
           <pre style={{ fontSize: 11, whiteSpace: 'pre-wrap' }}>{JSON.stringify(profile, null, 2)}</pre>
         </div>
+
+        <div className="sidebar-card">
+          <div className="eyebrow">Owner details</div>
+          <input placeholder="Name" value={owner?.name || ''} onChange={(e) => setOwner({ ...owner, name: e.target.value })} />
+          <input placeholder="Date of birth" value={owner?.dob || ''} onChange={(e) => setOwner({ ...owner, dob: e.target.value })} />
+          <input placeholder="Phone" value={owner?.phone || ''} onChange={(e) => setOwner({ ...owner, phone: e.target.value })} />
+          <button onClick={async () => { await window.companion.memorySetOwner(owner); setProfile(await window.companion.memoryGetProfile()); }}>Save owner</button>
+        </div>
       </aside>
 
       <main className="main">
@@ -588,7 +604,10 @@ export default function App() {
                   </div>
                 </div>
                 <div className="voice-actions">
-                  {!voiceMode ? <button onClick={startListening} disabled={busy || !activeConv}>Start listening</button> : <button className="danger" onClick={stopListening}>Stop listening</button>}
+                  {voiceMode ? <button className="danger" onClick={stopListening}>Pause listening</button> : <span className="muted">Always listening…</span>}
+                </div>
+                <div className="living-indicator" aria-live="polite">
+                  <span className="pulse" /> Companion is always listening and learning
                 </div>
                 {interimTranscript && <div className="voice-transcript" aria-live="polite">{interimTranscript}</div>}
                 {voiceError && <div className="voice-error" role="alert">{voiceError}</div>}
