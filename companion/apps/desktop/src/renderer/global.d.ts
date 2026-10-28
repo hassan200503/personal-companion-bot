@@ -56,6 +56,8 @@ declare global {
         memoryClearProfile(): Promise<any>;
         memoryGetOwner(): Promise<any>;
         memorySetOwner(owner: unknown): Promise<any>;
+        voiceGetSettings(): Promise<any>;
+        voiceSetSettings(settings: unknown): Promise<any>;
         onVoiceTranscript(cb: (payload: { text: string; final: boolean }) => void): () => void;
     };
   }

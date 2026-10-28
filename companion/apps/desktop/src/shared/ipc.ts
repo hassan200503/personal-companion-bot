@@ -53,6 +53,8 @@ export const ipcChannels = {
   voiceStart: 'voice:start',
   voiceStop: 'voice:stop',
   voiceTranscript: 'voice:transcript',
+  voiceGetSettings: 'voice:getSettings',
+  voiceSetSettings: 'voice:setSettings',
   memoryGetProfile: 'memory:getProfile',
   memorySetProfile: 'memory:setProfile',
   memoryClearProfile: 'memory:clearProfile',

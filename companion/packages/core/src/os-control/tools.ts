@@ -46,12 +46,12 @@ export function createOsPlayTool(): ToolDefinition<{ target: string }, { played:
   };
 }
 
-export function createOsSpeakTool(): ToolDefinition<{ text: string; voice?: string }, { spoken: boolean }> {
+export function createOsSpeakTool(): ToolDefinition<{ text: string; voice?: string; rate?: number }, { spoken: boolean }> {
   return {
     name: 'os.speak',
     version: '1.0.0',
     description: 'Speak text aloud using the OS text-to-speech engine.',
-    inputSchema: z.object({ text: z.string().min(1), voice: z.string().optional() }),
+    inputSchema: z.object({ text: z.string().min(1), voice: z.string().optional(), rate: z.number().optional() }),
     outputSchema: z.object({ spoken: z.boolean() }),
     requiredPermissions: ['os.speak'],
     dataClassification: 'personal',
@@ -62,7 +62,7 @@ export function createOsSpeakTool(): ToolDefinition<{ text: string; voice?: stri
     audit: 'none',
     platforms: ['all'],
     execute: async (_ctx, input) => {
-      const r = await speakText(input.text, input.voice);
+      const r = await speakText(input.text, input.voice, input.rate);
       return { spoken: r.spoken };
     },
   };

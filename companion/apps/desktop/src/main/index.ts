@@ -453,6 +453,29 @@ function registerIpc(): void {
     assertTrustedSender(event, suppliedToken);
     return backupStatus(backupDir ?? "");
   });
+  // Voice settings
+  ipcMain.handle(ipcChannels.voiceGetSettings, (event, suppliedToken: unknown): unknown => {
+    assertTrustedSender(event, suppliedToken);
+    try {
+      const row = companionDatabase?.raw.prepare('SELECT value FROM settings WHERE key = ?').get('voice.settings') as { value?: string } | undefined;
+      return row?.value ? JSON.parse(row.value) : { voice: '', rate: 0 };
+    } catch {
+      return { voice: '', rate: 0 };
+    }
+  });
+
+  ipcMain.handle(ipcChannels.voiceSetSettings, (event, suppliedToken: unknown, settings: unknown): unknown => {
+    assertTrustedSender(event, suppliedToken);
+    try {
+      companionDatabase?.raw.prepare(
+        'INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at'
+      ).run('voice.settings', JSON.stringify(settings ?? {}), new Date().toISOString());
+      return { ok: true };
+    } catch (e) {
+      return { ok: false, error: String(e) };
+    }
+  });
+
   // Memory profile
   ipcMain.handle(ipcChannels.memoryGetProfile, (event, suppliedToken: unknown): unknown => {
     assertTrustedSender(event, suppliedToken);
@@ -709,6 +732,14 @@ function registerIpc(): void {
           toolName = parsed.tool;
           input = parsed.input && typeof parsed.input === 'object' ? parsed.input : {};
         }
+      } catch { /* ignore */ }
+    }
+    if (toolName === 'os.speak') {
+      try {
+        const row = companionDatabase?.raw.prepare('SELECT value FROM settings WHERE key = ?').get('voice.settings') as { value?: string } | undefined;
+        const vs = row?.value ? JSON.parse(row.value) : {};
+        if (!input.voice && vs.voice) input.voice = vs.voice;
+        if (input.rate === undefined && typeof vs.rate === 'number') input.rate = vs.rate;
       } catch { /* ignore */ }
     }
     if (!toolName) return { handled: false };

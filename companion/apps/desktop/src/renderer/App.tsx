@@ -51,6 +51,7 @@ export default function App() {
   const [interimTranscript, setInterimTranscript] = useState('');
   const [voiceError, setVoiceError] = useState('');
   const [profile, setProfile] = useState<any>({});
+  const [voiceSettings, setVoiceSettings] = useState<any>({ voice: '', rate: 0 });
   const [muted, setMuted] = useState(false);
   const [owner, setOwner] = useState<any>({});
   const [speaking, setSpeaking] = useState(false);
@@ -69,6 +70,7 @@ export default function App() {
       setOnboarding(await window.companion.onboardingGetState());
       setConversations(await window.companion.chatListConversations());
       try { setProfile(await window.companion.memoryGetProfile()); } catch { /* ignore */ }
+      try { setVoiceSettings(await window.companion.voiceGetSettings()); } catch { /* ignore */ }
       try { setOwner(await window.companion.memoryGetOwner()); } catch { /* ignore */ }
     } catch (e) {
       setError(String(e));
@@ -376,6 +378,12 @@ export default function App() {
           </div>
         )}
 
+        <div className="sidebar-card">
+          <div className="eyebrow">Voice settings</div>
+          <input placeholder="Voice name" value={voiceSettings?.voice || ''} onChange={(e) => setVoiceSettings({ ...voiceSettings, voice: e.target.value })} />
+          <input placeholder="Rate (-10..10)" value={voiceSettings?.rate ?? 0} onChange={(e) => setVoiceSettings({ ...voiceSettings, rate: Number(e.target.value) })} />
+          <button onClick={async () => { await window.companion.voiceSetSettings(voiceSettings); }}>Save voice</button>
+        </div>
         <div className="sidebar-card">
           <div className="eyebrow">Memory profile</div>
           <pre style={{ fontSize: 11, whiteSpace: 'pre-wrap' }}>{JSON.stringify(profile, null, 2)}</pre>

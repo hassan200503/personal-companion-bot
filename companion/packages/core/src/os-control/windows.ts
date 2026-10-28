@@ -129,10 +129,11 @@ export async function playMedia(target: string): Promise<{ played: boolean; reso
   return r.ok ? { played: true, resolved: t } : { played: false, error: r.error };
 }
 
-export async function speakText(text: string, voice?: string): Promise<{ spoken: boolean; error?: string }> {
+export async function speakText(text: string, voice?: string, rate?: number): Promise<{ spoken: boolean; error?: string }> {
   const safe = text.replace(/'/g, "''").replace(/\r?\n/g, ' ');
   const voiceCmd = voice ? `$s.SelectVoice('${voice.replace(/'/g, "''")}');` : '';
-  const script = `Add-Type -AssemblyName System.Speech; $s = New-Object System.Speech.Synthesis.SpeechSynthesizer; ${voiceCmd} $s.Speak('${safe}');`;
+  const rateCmd = typeof rate === 'number' ? `$s.Rate = ${Math.max(-10, Math.min(10, Math.round(rate)))};` : '';
+  const script = `Add-Type -AssemblyName System.Speech; $s = New-Object System.Speech.Synthesis.SpeechSynthesizer; ${voiceCmd} ${rateCmd} $s.Speak('${safe}');`;
   return new Promise((resolve) => {
     const child = spawn('powershell', ['-NoProfile', '-Command', script], { windowsHide: true });
     let err = '';
