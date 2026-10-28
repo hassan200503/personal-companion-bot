@@ -561,8 +561,23 @@ function registerIpc(): void {
     // Normalize quotes
     const clean = trimmed.replace(/^["']|["']$/g, '').trim();
 
+    // Memory: remember
+    if (lower.startsWith('remember ')) {
+      const note = trimmed.slice(9).trim();
+      try {
+        const row = companionDatabase?.raw.prepare('SELECT value FROM settings WHERE key = ?').get('memory.profile') as { value?: string } | undefined;
+        const profile = row?.value ? JSON.parse(row.value) : {};
+        const notes = Array.isArray(profile.notes) ? profile.notes : [];
+        notes.push({ note, at: new Date().toISOString() });
+        profile.notes = notes;
+        companionDatabase?.raw.prepare(
+          'INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at'
+        ).run('memory.profile', JSON.stringify(profile), new Date().toISOString());
+      } catch { /* ignore */ }
+      return { handled: true, toolName: 'memory.remember', result: { ok: true, note } };
+    }
     // Screenshot
-    if (lower.includes('screenshot') || lower.includes('capture screen') || lower.includes('screen capture')) {
+    else if (lower.includes('screenshot') || lower.includes('capture screen') || lower.includes('screen capture')) {
       toolName = 'os.screenshot'; input = {};
     }
     // WhatsApp send

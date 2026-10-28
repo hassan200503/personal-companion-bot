@@ -51,6 +51,8 @@ declare global {
        osConfirmTool(actionHash: string): Promise<any>;
         voiceStart(): Promise<any>;
         voiceStop(): Promise<any>;
+        memoryGetProfile(): Promise<any>;
+        memorySetProfile(profile: unknown): Promise<any>;
         onVoiceTranscript(cb: (payload: { text: string; final: boolean }) => void): () => void;
     };
   }

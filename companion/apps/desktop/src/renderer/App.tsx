@@ -50,6 +50,7 @@ export default function App() {
   const [voiceState, setVoiceState] = useState<'off' | 'starting' | 'listening' | 'processing' | 'paused' | 'unsupported'>('off');
   const [interimTranscript, setInterimTranscript] = useState('');
   const [voiceError, setVoiceError] = useState('');
+  const [profile, setProfile] = useState<any>({});
   const [speaking, setSpeaking] = useState(false);
   const voiceModeRef = useRef(false);
   const voiceProcessingRef = useRef(false);
@@ -65,6 +66,7 @@ export default function App() {
       setStored(await window.companion.credentialsList());
       setOnboarding(await window.companion.onboardingGetState());
       setConversations(await window.companion.chatListConversations());
+      try { setProfile(await window.companion.memoryGetProfile()); } catch { /* ignore */ }
     } catch (e) {
       setError(String(e));
     }
@@ -360,6 +362,11 @@ export default function App() {
             ))}
           </div>
         )}
+
+        <div className="sidebar-card">
+          <div className="eyebrow">Memory profile</div>
+          <pre style={{ fontSize: 11, whiteSpace: 'pre-wrap' }}>{JSON.stringify(profile, null, 2)}</pre>
+        </div>
       </aside>
 
       <main className="main">
