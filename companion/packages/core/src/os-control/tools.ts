@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import type { ToolDefinition } from '../tools/contracts.js';
-import { openTarget, playMedia, speakText, makeCall, runCommand, takeScreenshot, takePhoto } from './windows.js';
+import { openTarget, playMedia, speakText, makeCall, runCommand, takeScreenshot, takePhoto, recordVideo } from './windows.js';
 
 export function createOsOpenTool(): ToolDefinition<{ target: string }, { opened: boolean }> {
   return {
@@ -184,6 +184,28 @@ export function createOsPhotoTool(): ToolDefinition<Record<string, never>, { ok:
   };
 }
 
+export function createOsVideoTool(): ToolDefinition<{ seconds?: number }, { ok: boolean; path?: string }> {
+  return {
+    name: 'os.video',
+    version: '1.0.0',
+    description: 'Record a short video (default 5 seconds) using the system camera and save it to Videos.',
+    inputSchema: z.object({ seconds: z.number().int().positive().optional() }),
+    outputSchema: z.object({ ok: z.boolean(), path: z.string().optional() }),
+    requiredPermissions: ['os.media'],
+    dataClassification: 'personal',
+    riskClass: 1,
+    reversible: true,
+    timeoutMs: 30_000,
+    cancellable: true,
+    audit: 'metadata',
+    platforms: ['all'],
+    execute: async (_ctx, input) => {
+      const r = await recordVideo(input?.seconds ?? 5);
+      return { ok: r.ok, path: r.path ?? r.error };
+    },
+  };
+}
+
 export function createOsControlTools(): ToolDefinition<unknown, unknown>[] {
   return [
     createOsOpenTool() as ToolDefinition<unknown, unknown>,
@@ -194,5 +216,6 @@ export function createOsControlTools(): ToolDefinition<unknown, unknown>[] {
     createOsScreenshotTool() as ToolDefinition<unknown, unknown>,
     createOsCameraTool() as ToolDefinition<unknown, unknown>,
     createOsPhotoTool() as ToolDefinition<unknown, unknown>,
+    createOsVideoTool() as ToolDefinition<unknown, unknown>,
   ];
 }

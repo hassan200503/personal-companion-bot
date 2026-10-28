@@ -514,8 +514,12 @@ function registerIpc(): void {
     else if (lower.includes('photo') || lower.includes('picture') || lower.includes('capture image') || lower.includes('take image')) {
       toolName = 'os.photo'; input = {};
     }
+    // Video recording
+    else if (lower.includes('video') || lower.includes('record')) {
+      toolName = 'os.video'; input = { seconds: 5 };
+    }
     // Camera open
-    else if (lower.includes('camera') || lower.includes('webcam') || lower.includes('record video')) {
+    else if (lower.includes('camera') || lower.includes('webcam')) {
       toolName = 'os.camera'; input = { mode: lower.includes('video') ? 'video' : 'photo' };
     }
     // Open

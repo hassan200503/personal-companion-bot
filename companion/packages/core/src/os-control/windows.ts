@@ -209,41 +209,133 @@ export async function takeScreenshot(): Promise<{ ok: boolean; path?: string; er
   });
 }
 
+
 export async function takePhoto(): Promise<{ ok: boolean; path?: string; error?: string }> {
+  const fs = await import("node:fs");
+  const pathMod = await import("node:path");
+  const os = await import("node:os");
+  const tmp = os.tmpdir();
+  const csPath = pathMod.join(tmp, "CompanionCam.cs");
+  const exePath = pathMod.join(tmp, "CompanionCam.exe");
   const code = [
-    'using System;',
-    'using System.Runtime.InteropServices.WindowsRuntime;',
-    'using Windows.Media.Capture;',
-    'using Windows.Media.MediaProperties;',
-    'using Windows.Storage;',
-    'public class CompanionCam {',
-    '  public static string Capture() {',
-    '    var mc = new MediaCapture();',
-    '    mc.InitializeAsync().AsTask().GetAwaiter().GetResult();',
-    '    var props = ImageEncodingProperties.CreateJpeg();',
-    '    var folder = KnownFolders.PicturesLibrary;',
-    '    var file = folder.CreateFileAsync("companion-photo.jpg", CreationCollisionOption.GenerateUniqueName).AsTask().GetResult();',
-    '    mc.CapturePhotoToStorageFileAsync(props, file).AsTask().GetResult();',
-    '    mc.Dispose();',
-    '    return file.Path;',
-    '  }',
-    '}',
-  ].join('\\n');
-  const ps = "$code = '" + code.replace(/'/g, "''") + "';\n" +
-    "Add-Type -TypeDefinition $code -ReferencedAssemblies 'C:\\Windows\\System32\\WinMetadata\\Windows.Media.winmd','C:\\Windows\\System32\\WinMetadata\\Windows.Storage.winmd','C:\\Windows\\System32\\WinMetadata\\Windows.Foundation.winmd','System.Runtime.WindowsRuntime';\n" +
-    "$p = [CompanionCam]::Capture();\n" +
-    "Write-Output $p";
+    "using System;",
+    "using System.Runtime.InteropServices.WindowsRuntime;",
+    "using Windows.Media.Capture;",
+    "using Windows.Media.MediaProperties;",
+    "using Windows.Storage;",
+    "public class CompanionCam {",
+    "  public static void Main() {",
+    "    var mc = new MediaCapture();",
+    "    mc.InitializeAsync().AsTask().GetAwaiter().GetResult();",
+    "    var props = ImageEncodingProperties.CreateJpeg();",
+    "    var folder = KnownFolders.PicturesLibrary;",
+    "    var file = folder.CreateFileAsync(\"companion-photo.jpg\", CreationCollisionOption.GenerateUniqueName).AsTask().GetAwaiter().GetResult();",
+    "    mc.CapturePhotoToStorageFileAsync(props, file).AsTask().GetAwaiter().GetResult();",
+    "    mc.Dispose();",
+    "    Console.WriteLine(file.Path);",
+    "  }",
+    "}",
+  ].join("\n");
+  try {
+    fs.writeFileSync(csPath, code, "utf8");
+  } catch (e) {
+    return { ok: false, error: String(e) };
+  }
+  // compile
+  const csc = "C:\\Windows\\Microsoft.NET\\Framework64\\v4.0.30319\\csc.exe";
+  const winmd = "C:\\Program Files (x86)\\Windows Kits\\10\\UnionMetadata\\10.0.26100.0\\Windows.winmd";
+  const compile = await new Promise<{ code: number; stderr: string }>((resolve) => {
+    const child = spawn(csc, [
+      "/target:exe",
+      `/out:${exePath}`,
+      `/r:${winmd}`,
+      "C:\\Windows\\Microsoft.NET\\Framework64\\v4.0.30319\\System.Runtime.dll",
+      "C:\\Windows\\Microsoft.NET\\Framework64\\v4.0.30319\\System.Runtime.WindowsRuntime.dll",
+      csPath,
+    ], { windowsHide: true });
+    let err = "";
+    child.stderr.on("data", (d) => { err += d.toString(); });
+    child.on("close", (code) => resolve({ code: code ?? -1, stderr: err }));
+    child.on("error", (e) => resolve({ code: -1, stderr: String(e) }));
+  });
+  if (compile.code !== 0) {
+    return { ok: false, error: compile.stderr.trim() || "compile_failed" };
+  }
+  // run
   return new Promise((resolve) => {
-    const child = spawn('powershell', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', ps], { windowsHide: true });
-    let out = '';
-    let err = '';
-    child.stdout.on('data', (d) => { out += d.toString(); });
-    child.stderr.on('data', (d) => { err += d.toString(); });
-    child.on('close', (code) => {
+    const child = spawn(exePath, [], { windowsHide: true });
+    let out = "";
+    let err = "";
+    child.stdout.on("data", (d) => { out += d.toString(); });
+    child.stderr.on("data", (d) => { err += d.toString(); });
+    child.on("close", (code) => {
       const p = out.trim();
       if (code === 0 && p) resolve({ ok: true, path: p });
       else resolve({ ok: false, error: err.trim() || `exit ${code}` });
     });
-    child.on('error', (e) => resolve({ ok: false, error: e.message }));
+    child.on("error", (e) => resolve({ ok: false, error: e.message }));
   });
 }
+
+
+export async function recordVideo(seconds: number = 5): Promise<{ ok: boolean; path?: string; error?: string }> {
+  const fs = await import("node:fs");
+  const pathMod = await import("node:path");
+  const os = await import("node:os");
+  const tmp = os.tmpdir();
+  const csPath = pathMod.join(tmp, "CompanionVid.cs");
+  const exePath = pathMod.join(tmp, "CompanionVid.exe");
+  const code = [
+    "using System;",
+    "using System.Runtime.InteropServices.WindowsRuntime;",
+    "using Windows.Media.Capture;",
+    "using Windows.Media.MediaProperties;",
+    "using Windows.Storage;",
+    "public class CompanionVid {",
+    "  public static void Main() {",
+    "    var mc = new MediaCapture();",
+    "    mc.InitializeAsync().AsTask().GetAwaiter().GetResult();",
+    "    var profile = MediaEncodingProfile.CreateMp4(VideoEncodingQuality.Auto);",
+    "    var folder = KnownFolders.VideosLibrary;",
+    "    var file = folder.CreateFileAsync(\"companion-video.mp4\", CreationCollisionOption.GenerateUniqueName).AsTask().GetAwaiter().GetResult();",
+    "    mc.StartRecordToStorageFileAsync(profile, file).AsTask().GetAwaiter().GetResult();",
+    `    System.Threading.Thread.Sleep(${Math.max(1, seconds) * 1000});`,
+    "    mc.StopRecordAsync().AsTask().GetAwaiter().GetResult();",
+    "    mc.Dispose();",
+    "    Console.WriteLine(file.Path);",
+    "  }",
+    "}",
+  ].join("\n");
+  try { fs.writeFileSync(csPath, code, "utf8"); } catch (e) { return { ok: false, error: String(e) }; }
+  const csc = "C:\\Windows\\Microsoft.NET\\Framework64\\v4.0.30319\\csc.exe";
+  const winmd = "C:\\Program Files (x86)\\Windows Kits\\10\\UnionMetadata\\10.0.26100.0\\Windows.winmd";
+  const compile = await new Promise<{ code: number; stderr: string }>((resolve) => {
+    const child = spawn(csc, [
+      "/target:exe",
+      `/out:${exePath}`,
+      `/r:${winmd}`,
+      "C:\\Windows\\Microsoft.NET\\Framework64\\v4.0.30319\\System.Runtime.dll",
+      "C:\\Windows\\Microsoft.NET\\Framework64\\v4.0.30319\\System.Runtime.WindowsRuntime.dll",
+      csPath,
+    ], { windowsHide: true });
+    let err = "";
+    child.stderr.on("data", (d) => { err += d.toString(); });
+    child.on("close", (code) => resolve({ code: code ?? -1, stderr: err }));
+    child.on("error", (e) => resolve({ code: -1, stderr: String(e) }));
+  });
+  if (compile.code !== 0) return { ok: false, error: compile.stderr.trim() || "compile_failed" };
+  return new Promise((resolve) => {
+    const child = spawn(exePath, [], { windowsHide: true });
+    let out = "";
+    let err = "";
+    child.stdout.on("data", (d) => { out += d.toString(); });
+    child.stderr.on("data", (d) => { err += d.toString(); });
+    child.on("close", (code) => {
+      const p = out.trim();
+      if (code === 0 && p) resolve({ ok: true, path: p });
+      else resolve({ ok: false, error: err.trim() || `exit ${code}` });
+    });
+    child.on("error", (e) => resolve({ ok: false, error: e.message }));
+  });
+}
+

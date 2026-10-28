@@ -232,23 +232,22 @@ export default function App() {
     }
   }
 
-  function speakReply(content: string): void {
+  async function speakReply(content: string): Promise<void> {
     if (!content.trim()) return;
     speakingRef.current = true;
     setSpeaking(true);
     setVoiceState('processing');
-    window.companion.osTryCommand(`speak ${content}`).then(() => {
+    try {
+      await window.companion.osTryCommand(`speak ${content}`);
+    } catch {
+      setVoiceError('Voice output failed. Check that Windows has an installed speech voice.');
+    } finally {
       speakingRef.current = false;
       setSpeaking(false);
       if (voiceModeRef.current) {
         setVoiceState('listening');
       }
-    }).catch(() => {
-      speakingRef.current = false;
-      setSpeaking(false);
-      setVoiceError('Voice output failed. Check that Windows has an installed speech voice.');
-      if (voiceModeRef.current) setVoiceState('listening');
-    });
+    }
   }
 
 
