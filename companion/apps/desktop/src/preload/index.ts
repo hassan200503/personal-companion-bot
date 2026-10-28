@@ -32,6 +32,8 @@ const api = Object.freeze({
   osConfirmTool: (actionHash: string): Promise<unknown> => ipcRenderer.invoke(ipcChannels.osConfirmTool, sessionToken, actionHash),
   voiceStart: (): Promise<unknown> => ipcRenderer.invoke(ipcChannels.voiceStart, sessionToken),
   voiceStop: (): Promise<unknown> => ipcRenderer.invoke(ipcChannels.voiceStop, sessionToken),
+  memoryGetProfile: (): Promise<unknown> => ipcRenderer.invoke(ipcChannels.memoryGetProfile, sessionToken),
+  memorySetProfile: (profile: unknown): Promise<unknown> => ipcRenderer.invoke(ipcChannels.memorySetProfile, sessionToken, profile),
   onVoiceTranscript: (cb: (payload: { text: string; final: boolean }) => void): (() => void) => {
     const handler = (_e: Electron.IpcRendererEvent, payload: { text: string; final: boolean }) => cb(payload);
     ipcRenderer.on(ipcChannels.voiceTranscript, handler);

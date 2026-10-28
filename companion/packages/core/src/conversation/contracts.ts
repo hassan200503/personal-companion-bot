@@ -75,6 +75,7 @@ export interface ConversationEngine {
   ): AsyncIterable<string>;
   isDegraded(): boolean;
   setDefaultModel(model: string): void;
+  setSystemPrompt(prompt: string): void;
   resetDegraded(): void;
   setMemoryHooks(hooks: {
     retrieve?: (query: string) => Promise<string[]>;

@@ -23,7 +23,7 @@ const DEFAULT_MAX_HISTORY = 20;
 
 export class DefaultConversationEngine implements ConversationEngine {
   private readonly router: ProviderRouter;
-  private readonly systemPrompt?: string;
+  private systemPrompt?: string;
   private defaultModel: string;
   private readonly maxHistoryMessages: number;
   private readonly maxOutputTokens?: number;
@@ -95,6 +95,10 @@ export class DefaultConversationEngine implements ConversationEngine {
 
   setDefaultModel(model: string): void {
     if (model) this.defaultModel = model;
+  }
+
+  setSystemPrompt(prompt: string): void {
+    this.systemPrompt = prompt;
   }
 
   isDegraded(): boolean {

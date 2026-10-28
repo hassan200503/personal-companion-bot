@@ -334,7 +334,39 @@ function registerIpc(): void {
   ipcMain.handle(ipcChannels.chatSendMessage, async (event, suppliedToken: unknown, conversationId: string, content: string): Promise<unknown> => {
     assertTrustedSender(event, suppliedToken);
     if (!conversationEngine) throw new Error("Chat unavailable");
+    // Inject memory profile into system prompt
+    try {
+      const row = companionDatabase?.raw.prepare('SELECT value FROM settings WHERE key = ?').get('memory.profile') as { value?: string } | undefined;
+      const profile = row?.value ? JSON.parse(row.value) : {};
+      const base = 'You are Companion, a helpful private assistant.';
+      const profileText = Object.keys(profile).length ? `\\nUser profile: ${JSON.stringify(profile)}` : '';
+      conversationEngine.setSystemPrompt(base + profileText);
+    } catch { /* ignore */ }
     const msg = await conversationEngine.sendMessage(conversationId, content, new AbortController().signal);
+    // Reflect to update profile (best effort)
+    void (async () => {
+      try {
+        if (!providerRouter || !defaultModel) return;
+        const resp = await providerRouter.complete({
+          model: defaultModel,
+          messages: [
+            { role: 'system', content: 'Extract any durable user preferences/facts from this exchange. Return JSON object with keys to update (e.g. {"tone":"concise","interests":["music"]}). If none, return {}.' },
+            { role: 'user', content: `User: ${content}\\nAssistant: ${msg.content}` },
+          ],
+          temperature: 0,
+          jsonMode: true,
+        }, new AbortController().signal);
+        const parsed = JSON.parse(resp.content.trim().replace(/^```json\\s*/i, '').replace(/```$/i, ''));
+        if (parsed && typeof parsed === 'object' && Object.keys(parsed).length) {
+          const row = companionDatabase?.raw.prepare('SELECT value FROM settings WHERE key = ?').get('memory.profile') as { value?: string } | undefined;
+          const existing = row?.value ? JSON.parse(row.value) : {};
+          const merged = { ...existing, ...parsed };
+          companionDatabase?.raw.prepare(
+            'INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at'
+          ).run('memory.profile', JSON.stringify(merged), new Date().toISOString());
+        }
+      } catch { /* ignore */ }
+    })();
     return { id: msg.id, role: msg.role, content: msg.content, createdAt: msg.createdAt };
   });
 
@@ -418,6 +450,29 @@ function registerIpc(): void {
     assertTrustedSender(event, suppliedToken);
     return backupStatus(backupDir ?? "");
   });
+  // Memory profile
+  ipcMain.handle(ipcChannels.memoryGetProfile, (event, suppliedToken: unknown): unknown => {
+    assertTrustedSender(event, suppliedToken);
+    try {
+      const row = companionDatabase?.raw.prepare('SELECT value FROM settings WHERE key = ?').get('memory.profile') as { value?: string } | undefined;
+      return row?.value ? JSON.parse(row.value) : {};
+    } catch {
+      return {};
+    }
+  });
+
+  ipcMain.handle(ipcChannels.memorySetProfile, (event, suppliedToken: unknown, profile: unknown): unknown => {
+    assertTrustedSender(event, suppliedToken);
+    try {
+      companionDatabase?.raw.prepare(
+        'INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at'
+      ).run('memory.profile', JSON.stringify(profile ?? {}), new Date().toISOString());
+      return { ok: true };
+    } catch (e) {
+      return { ok: false, error: String(e) };
+    }
+  });
+
   // Voice (offline STT via Windows Speech)
   ipcMain.handle(ipcChannels.voiceStart, (event, suppliedToken: unknown): unknown => {
     assertTrustedSender(event, suppliedToken);
