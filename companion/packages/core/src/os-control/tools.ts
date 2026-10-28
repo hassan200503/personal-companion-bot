@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import type { ToolDefinition } from '../tools/contracts.js';
-import { openTarget, playMedia, speakText, makeCall, runCommand, takeScreenshot } from './windows.js';
+import { openTarget, playMedia, speakText, makeCall, runCommand, takeScreenshot, takePhoto } from './windows.js';
 
 export function createOsOpenTool(): ToolDefinition<{ target: string }, { opened: boolean }> {
   return {
@@ -157,6 +157,33 @@ export function createOsCameraTool(): ToolDefinition<{ mode?: 'photo' | 'video' 
   };
 }
 
+export function createOsPhotoTool(): ToolDefinition<{}, { ok: boolean; path?: string }> {
+  return {
+    name: 'os.photo',
+    version: '1.0.0',
+    description: 'Capture a photo using the system camera and save it to Pictures.',
+    inputSchema: z.object({}),
+    outputSchema: z.object({ ok: z.boolean(), path: z.string().optional() }),
+    requiredPermissions: ['os.media'],
+    dataClassification: 'personal',
+    riskClass: 1,
+    reversible: true,
+    timeoutMs: 20_000,
+    cancellable: true,
+    audit: 'metadata',
+    platforms: ['all'],
+    execute: async () => {
+      const r = await takePhoto();
+      if (!r.ok) {
+        // Fallback: open camera app so user can capture manually.
+        await openTarget('camera');
+        return { ok: false, path: r.error };
+      }
+      return { ok: r.ok, path: r.path };
+    },
+  };
+}
+
 export function createOsControlTools(): ToolDefinition<unknown, unknown>[] {
   return [
     createOsOpenTool() as ToolDefinition<unknown, unknown>,
@@ -166,5 +193,6 @@ export function createOsControlTools(): ToolDefinition<unknown, unknown>[] {
     createOsRunTool() as ToolDefinition<unknown, unknown>,
     createOsScreenshotTool() as ToolDefinition<unknown, unknown>,
     createOsCameraTool() as ToolDefinition<unknown, unknown>,
+    createOsPhotoTool() as ToolDefinition<unknown, unknown>,
   ];
 }

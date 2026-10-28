@@ -14,7 +14,6 @@ export async function openTarget(target: string): Promise<{ opened: boolean; res
     });
   };
 
-  // URL or existing file path
   if (/^[a-z][a-z0-9+.-]*:/i.test(t) || (await import('node:fs')).existsSync(t)) {
     const r = await runStart(t);
     return r.ok ? { opened: true, resolved: t } : { opened: false, error: r.error };
@@ -26,17 +25,21 @@ export async function openTarget(target: string): Promise<{ opened: boolean; res
     settings: 'ms-settings:', store: 'ms-windows-store:', whatsapp: 'whatsapp:', browser: 'https://www.google.com',
     edge: 'msedge', chrome: 'chrome', youtube: 'https://www.youtube.com',
   };
-  const alias = aliases[t.toLowerCase()];
+  let alias = aliases[t.toLowerCase()];
+  if (!alias) {
+    const lower = t.toLowerCase();
+    for (const key of Object.keys(aliases)) {
+      if (lower.includes(key)) { alias = aliases[key]; break; }
+    }
+  }
   if (alias) {
     const r = await runStart(alias);
     if (r.ok) return { opened: true, resolved: alias };
   }
 
-  // direct executable/app name
   let r = await runStart(t);
   if (r.ok) return { opened: true, resolved: t };
 
-  // Resolve via PowerShell Get-StartApps
   try {
     const { execFileSync } = await import('node:child_process');
     const out = execFileSync('powershell', [
@@ -65,6 +68,8 @@ export async function playMedia(target: string): Promise<{ played: boolean; reso
       process.env.USERPROFILE ? pathMod.join(process.env.USERPROFILE, 'Music') : '',
       process.env.USERPROFILE ? pathMod.join(process.env.USERPROFILE, 'Videos') : '',
       process.env.USERPROFILE ? pathMod.join(process.env.USERPROFILE, 'Downloads') : '',
+      process.env.USERPROFILE ? pathMod.join(process.env.USERPROFILE, 'Desktop') : '',
+      process.env.USERPROFILE ? pathMod.join(process.env.USERPROFILE, 'Documents') : '',
     ].filter(Boolean);
     let found: string | null = null;
     const walk = (dir: string, depth: number): string | null => {
@@ -84,11 +89,22 @@ export async function playMedia(target: string): Promise<{ played: boolean; reso
     };
     for (const root of roots) {
       if (!existsSync(root)) continue;
-      found = walk(root, 2);
+      found = walk(root, 3);
       if (found) break;
     }
     if (found) t = found;
-    else return { played: false, error: 'file_not_found' };
+    else {
+      const q = encodeURIComponent(t.replace(/['"]/g, '').trim());
+      const url = `https://www.youtube.com/results?search_query=${q}`;
+      const r = await new Promise<{ ok: boolean; error?: string }>((resolve) => {
+        const child = spawn('cmd', ['/c', 'start', '', url], { windowsHide: true });
+        let err = '';
+        child.stderr.on('data', (d) => { err += d.toString(); });
+        child.on('close', (code) => resolve(code === 0 ? { ok: true } : { ok: false, error: err.trim() || `exit ${code}` }));
+        child.on('error', (e) => resolve({ ok: false, error: e.message }));
+      });
+      return r.ok ? { played: true, resolved: url } : { played: false, error: 'file_not_found' };
+    }
   }
 
   const r = await (async () => {
@@ -161,6 +177,7 @@ export async function runCommand(command: string, args: string[] = [], timeoutMs
     });
   });
 }
+
 export async function takeScreenshot(): Promise<{ ok: boolean; path?: string; error?: string }> {
   const dir = process.env.USERPROFILE ? `${process.env.USERPROFILE}\\Pictures\\Screenshots` : 'C:\\Screenshots';
   const ts = new Date().toISOString().replace(/[:.]/g, '-');
@@ -192,3 +209,41 @@ export async function takeScreenshot(): Promise<{ ok: boolean; path?: string; er
   });
 }
 
+export async function takePhoto(): Promise<{ ok: boolean; path?: string; error?: string }> {
+  const code = [
+    'using System;',
+    'using System.Runtime.InteropServices.WindowsRuntime;',
+    'using Windows.Media.Capture;',
+    'using Windows.Media.MediaProperties;',
+    'using Windows.Storage;',
+    'public class CompanionCam {',
+    '  public static string Capture() {',
+    '    var mc = new MediaCapture();',
+    '    mc.InitializeAsync().AsTask().GetAwaiter().GetResult();',
+    '    var props = ImageEncodingProperties.CreateJpeg();',
+    '    var folder = KnownFolders.PicturesLibrary;',
+    '    var file = folder.CreateFileAsync("companion-photo.jpg", CreationCollisionOption.GenerateUniqueName).AsTask().GetResult();',
+    '    mc.CapturePhotoToStorageFileAsync(props, file).AsTask().GetResult();',
+    '    mc.Dispose();',
+    '    return file.Path;',
+    '  }',
+    '}',
+  ].join('\\n');
+  const ps = "$code = '" + code.replace(/'/g, "''") + "';\n" +
+    "Add-Type -TypeDefinition $code -ReferencedAssemblies 'C:\\Windows\\System32\\WinMetadata\\Windows.Media.winmd','C:\\Windows\\System32\\WinMetadata\\Windows.Storage.winmd','C:\\Windows\\System32\\WinMetadata\\Windows.Foundation.winmd','System.Runtime.WindowsRuntime';\n" +
+    "$p = [CompanionCam]::Capture();\n" +
+    "Write-Output $p";
+  return new Promise((resolve) => {
+    const child = spawn('powershell', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', ps], { windowsHide: true });
+    let out = '';
+    let err = '';
+    child.stdout.on('data', (d) => { out += d.toString(); });
+    child.stderr.on('data', (d) => { err += d.toString(); });
+    child.on('close', (code) => {
+      const p = out.trim();
+      if (code === 0 && p) resolve({ ok: true, path: p });
+      else resolve({ ok: false, error: err.trim() || `exit ${code}` });
+    });
+    child.on('error', (e) => resolve({ ok: false, error: e.message }));
+  });
+}

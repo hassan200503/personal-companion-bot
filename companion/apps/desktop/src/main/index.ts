@@ -428,14 +428,19 @@ function registerIpc(): void {
       '$r.SetInputToDefaultAudioDevice()',
       '$g = New-Object System.Speech.Recognition.DictationGrammar',
       '$r.LoadGrammar($g)',
-      'Register-ObjectEvent -InputObject $r -EventName SpeechRecognized -Action {',
-      '  param($sender,$e)',
-      '  Write-Output ("RECOGNIZED:" + $e.Result.Text)',
-      '  [Console]::Out.Flush()',
-      '} | Out-Null',
-      '$r.RecognizeAsync([System.Speech.Recognition.RecognizeMode]::Multiple)',
       'Write-Host "LISTENING"',
-      'while ($true) { Start-Sleep -Milliseconds 200 }',
+      '[Console]::Out.Flush()',
+      'while ($true) {',
+      '  try {',
+      '    $res = $r.Recognize()',
+      '    if ($res -ne $null -and $res.Text) {',
+      '      Write-Output ("RECOGNIZED:" + $res.Text)',
+      '      [Console]::Out.Flush()',
+      '    }',
+      '  } catch {',
+      '    Start-Sleep -Milliseconds 500',
+      '  }',
+      '}',
     ].join('\n');
     const scriptPath = join(app.getPath('temp'), 'companion-listen.ps1');
     writeFileSync(scriptPath, script, 'utf8');
@@ -496,15 +501,58 @@ function registerIpc(): void {
     const lower = trimmed.toLowerCase();
     let toolName: string | null = null;
     let input: any = {};
-    if (lower.startsWith('open ')) { toolName = 'os.open'; input = { target: trimmed.slice(5).trim() }; }
-    else if (lower.startsWith('play ')) { toolName = 'os.play'; input = { target: trimmed.slice(5).trim() }; }
-    else if (lower.startsWith('speak ')) { toolName = 'os.speak'; input = { text: trimmed.slice(6).trim() }; }
-    else if (lower.startsWith('say ')) { toolName = 'os.speak'; input = { text: trimmed.slice(4).trim() }; }
-    else if (lower.startsWith('call ')) { toolName = 'os.call'; input = { number: trimmed.slice(5).trim() }; }
-    else if (lower.startsWith('run ')) { toolName = 'os.run'; input = { command: trimmed.slice(4).trim() }; }
-    else if (lower.startsWith('screenshot') || lower === 'take screenshot' || lower.startsWith('capture screen')) { toolName = 'os.screenshot'; input = {}; }
-    else if (lower.startsWith('camera') || lower.startsWith('take photo') || lower.startsWith('take picture') || lower.startsWith('take video') || lower.startsWith('record video')) { toolName = 'os.camera'; input = { mode: lower.includes('video') ? 'video' : 'photo' }; }
-    else if (lower.startsWith('photo')) { toolName = 'os.camera'; input = { mode: 'photo' }; }
+    // Normalize quotes
+    const clean = trimmed.replace(/^["']|["']$/g, '').trim();
+
+    // Screenshot
+    if (lower.includes('screenshot') || lower.includes('capture screen') || lower.includes('screen capture')) {
+      toolName = 'os.screenshot'; input = {};
+    }
+    // Photo capture
+    else if (lower.includes('photo') || lower.includes('picture') || lower.includes('capture image') || lower.includes('take image')) {
+      toolName = 'os.photo'; input = {};
+    }
+    // Camera open
+    else if (lower.includes('camera') || lower.includes('webcam') || lower.includes('record video')) {
+      toolName = 'os.camera'; input = { mode: lower.includes('video') ? 'video' : 'photo' };
+    }
+    // Open
+    else if (lower.startsWith('open ')) {
+      // Extract a known alias if present in the phrase.
+      const aliases = ['camera','whatsapp','youtube','notepad','calculator','calc','paint','explorer','files','settings','store','browser','edge','chrome','photos'];
+      let target = clean.slice(5).trim();
+      const foundAlias = aliases.find((a) => target.toLowerCase().includes(a));
+      if (foundAlias) target = foundAlias;
+      toolName = 'os.open'; input = { target };
+    }
+    // Play
+    else if (lower.startsWith('play ')) {
+      let target = clean.slice(5).trim();
+      // Extract quoted title
+      const qm = target.match(/["']([^"']+)["']/);
+      if (qm) target = qm[1] ?? target;
+      else {
+        // strip leading "a song"/"song"/"music"/"video"/"movie"
+        target = target.replace(/^(a\s+)?(song|music|track|video|movie|film)\s*[:,]?\s*/i, '').trim();
+        // if comma separated, take part after comma
+        if (target.includes(',')) target = target.split(',').pop()!.trim().replace(/^["']|["']$/g, '');
+      }
+      if (!target) target = clean.slice(5).trim();
+      toolName = 'os.play'; input = { target };
+    }
+    else if (lower.startsWith('speak ') || lower.startsWith('say ')) {
+      const off = lower.startsWith('speak ') ? 6 : 4;
+      toolName = 'os.speak'; input = { text: trimmed.slice(off).trim() };
+    }
+    else if (lower.startsWith('call ')) {
+      toolName = 'os.call'; input = { number: trimmed.slice(5).trim() };
+    }
+    else if (lower.startsWith('run ')) {
+      toolName = 'os.run'; input = { command: trimmed.slice(4).trim() };
+    }
+    else if (lower.startsWith('screenshot') || lower === 'take screenshot' || lower.startsWith('capture screen')) {
+      toolName = 'os.screenshot'; input = {};
+    }
     if (!toolName) return { handled: false };
     const cm = confirmationManager!;
     const ctx = {
