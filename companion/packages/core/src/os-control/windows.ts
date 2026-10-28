@@ -363,24 +363,49 @@ export async function recordVideo(seconds: number = 5): Promise<{ ok: boolean; p
   });
 }
 
+function escapeSendKeys(s: string): string {
+  return s.split('').map((c) => {
+    if ('+^%~(){}[]'.includes(c)) return `{${c}}`;
+    return c;
+  }).join('');
+}
+
 export async function sendWhatsAppMessage(contact: string, message: string): Promise<{ sent: boolean; error?: string }> {
+  const phone = contact.replace(/[^\d+]/g, '');
+  const isPhone = phone.length >= 7;
   const encoded = encodeURIComponent(message);
-  const phone = contact.replace(/[^\d+]/g, "");
-  const url = phone.length >= 7 ? `https://wa.me/${phone}?text=${encoded}` : `whatsapp://send?text=${encoded}`;
+  const url = isPhone ? `https://wa.me/${phone}?text=${encoded}` : 'whatsapp://';
   const open = await new Promise<{ ok: boolean; error?: string }>((resolve) => {
-    const child = spawn("cmd", ["/c", "start", "", url], { windowsHide: true });
-    let err = "";
-    child.stderr.on("data", (d) => { err += d.toString(); });
-    child.on("close", (code) => resolve(code === 0 ? { ok: true } : { ok: false, error: err.trim() || `exit ${code}` }));
-    child.on("error", (e) => resolve({ ok: false, error: e.message }));
+    const child = spawn('cmd', ['/c', 'start', '', url], { windowsHide: true });
+    let err = '';
+    child.stderr.on('data', (d) => { err += d.toString(); });
+    child.on('close', (code) => resolve(code === 0 ? { ok: true } : { ok: false, error: err.trim() || `exit ${code}` }));
+    child.on('error', (e) => resolve({ ok: false, error: e.message }));
   });
   if (!open.ok) return { sent: false, error: open.error };
-  await new Promise((r) => setTimeout(r, 4000));
-  const ps = `$wsh = New-Object -ComObject WScript.Shell; if ($wsh.AppActivate("WhatsApp")) { Start-Sleep -Milliseconds 500; Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.SendKeys]::SendWait("{ENTER}") }`;
-  await new Promise((resolve) => {
-    const child = spawn("powershell", ["-NoProfile", "-Command", ps], { windowsHide: true });
-    child.on("close", () => resolve(null));
-    child.on("error", () => resolve(null));
+  await new Promise((r) => setTimeout(r, isPhone ? 4000 : 5000));
+  const contactEsc = escapeSendKeys(contact);
+  const messageEsc = escapeSendKeys(message);
+  const steps: string[] = [];
+  steps.push('$wsh = New-Object -ComObject WScript.Shell');
+  steps.push('if (-not $wsh.AppActivate("WhatsApp")) { exit 1 }');
+  steps.push('Start-Sleep -Milliseconds 800');
+  if (!isPhone) {
+    steps.push('$wsh.SendKeys("^f")');
+    steps.push('Start-Sleep -Milliseconds 600');
+    steps.push(`$wsh.SendKeys("${contactEsc}")`);
+    steps.push('Start-Sleep -Milliseconds 1500');
+    steps.push('$wsh.SendKeys("{ENTER}")');
+    steps.push('Start-Sleep -Milliseconds 1200');
+    steps.push(`$wsh.SendKeys("${messageEsc}")`);
+    steps.push('Start-Sleep -Milliseconds 500');
+  }
+  steps.push('$wsh.SendKeys("{ENTER}")');
+  const ps = steps.join('; ');
+  const ok = await new Promise<boolean>((resolve) => {
+    const child = spawn('powershell', ['-NoProfile', '-Command', ps], { windowsHide: true });
+    child.on('close', (c) => { resolve(c === 0); });
+    child.on('error', () => resolve(false));
   });
-  return { sent: true };
+  return ok ? { sent: true } : { sent: false, error: 'UI automation failed' };
 }
