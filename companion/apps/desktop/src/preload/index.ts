@@ -34,6 +34,7 @@ const api = Object.freeze({
   voiceStop: (): Promise<unknown> => ipcRenderer.invoke(ipcChannels.voiceStop, sessionToken),
   memoryGetProfile: (): Promise<unknown> => ipcRenderer.invoke(ipcChannels.memoryGetProfile, sessionToken),
   memorySetProfile: (profile: unknown): Promise<unknown> => ipcRenderer.invoke(ipcChannels.memorySetProfile, sessionToken, profile),
+  memoryClearProfile: (): Promise<unknown> => ipcRenderer.invoke(ipcChannels.memoryClearProfile, sessionToken),
   memoryGetOwner: (): Promise<unknown> => ipcRenderer.invoke(ipcChannels.memoryGetOwner, sessionToken),
   memorySetOwner: (owner: unknown): Promise<unknown> => ipcRenderer.invoke(ipcChannels.memorySetOwner, sessionToken, owner),
   onVoiceTranscript: (cb: (payload: { text: string; final: boolean }) => void): (() => void) => {

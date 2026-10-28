@@ -476,6 +476,16 @@ function registerIpc(): void {
     }
   });
 
+  ipcMain.handle(ipcChannels.memoryClearProfile, (event, suppliedToken: unknown): unknown => {
+    assertTrustedSender(event, suppliedToken);
+    try {
+      companionDatabase?.raw.prepare('DELETE FROM settings WHERE key = ?').run('memory.profile');
+      return { ok: true };
+    } catch (e) {
+      return { ok: false, error: String(e) };
+    }
+  });
+
   ipcMain.handle(ipcChannels.memoryGetOwner, (event, suppliedToken: unknown): unknown => {
     assertTrustedSender(event, suppliedToken);
     try {

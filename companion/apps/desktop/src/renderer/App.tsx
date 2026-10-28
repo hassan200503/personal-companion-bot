@@ -374,6 +374,17 @@ export default function App() {
         <div className="sidebar-card">
           <div className="eyebrow">Memory profile</div>
           <pre style={{ fontSize: 11, whiteSpace: 'pre-wrap' }}>{JSON.stringify(profile, null, 2)}</pre>
+          <button onClick={async () => { await window.companion.memoryClearProfile(); setProfile({}); }}>Clear memory</button>
+          {Array.isArray(profile?.notes) && profile.notes.map((n: any, i: number) => (
+            <div key={i} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11 }}>
+              <span>{n.note}</span>
+              <button onClick={async () => {
+                const next = { ...profile, notes: profile.notes.filter((_: any, idx: number) => idx !== i) };
+                await window.companion.memorySetProfile(next);
+                setProfile(next);
+              }}>×</button>
+            </div>
+          ))}
         </div>
 
         <div className="sidebar-card">

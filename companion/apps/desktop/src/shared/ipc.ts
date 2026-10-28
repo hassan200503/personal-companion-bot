@@ -55,6 +55,7 @@ export const ipcChannels = {
   voiceTranscript: 'voice:transcript',
   memoryGetProfile: 'memory:getProfile',
   memorySetProfile: 'memory:setProfile',
+  memoryClearProfile: 'memory:clearProfile',
   memoryGetOwner: 'memory:getOwner',
   memorySetOwner: 'memory:setOwner',
 } as const;
