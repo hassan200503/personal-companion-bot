@@ -1,4 +1,4 @@
-import { spawn } from 'node:child_process';
+import { spawn, type ChildProcess } from 'node:child_process';
 
 export async function openTarget(target: string): Promise<{ opened: boolean; resolved?: string; error?: string }> {
   const t = target.trim();
@@ -129,6 +129,8 @@ export async function playMedia(target: string): Promise<{ played: boolean; reso
   return r.ok ? { played: true, resolved: t } : { played: false, error: r.error };
 }
 
+let ttsProcess: ChildProcess | null = null;
+
 export async function speakText(text: string, voice?: string, rate?: number): Promise<{ spoken: boolean; error?: string }> {
   const safe = text.replace(/'/g, "''").replace(/\r?\n/g, ' ');
   const voiceCmd = voice ? `$s.SelectVoice('${voice.replace(/'/g, "''")}');` : '';
@@ -136,14 +138,25 @@ export async function speakText(text: string, voice?: string, rate?: number): Pr
   const script = `Add-Type -AssemblyName System.Speech; $s = New-Object System.Speech.Synthesis.SpeechSynthesizer; ${voiceCmd} ${rateCmd} $s.Speak('${safe}');`;
   return new Promise((resolve) => {
     const child = spawn('powershell', ['-NoProfile', '-Command', script], { windowsHide: true });
+    ttsProcess = child;
     let err = '';
     child.stderr.on('data', (d) => { err += d.toString(); });
     child.on('close', (code) => {
+      ttsProcess = null;
       if (code === 0) resolve({ spoken: true });
       else resolve({ spoken: false, error: err.trim() || `exit ${code}` });
     });
     child.on('error', (e) => resolve({ spoken: false, error: e.message }));
   });
+}
+
+export function stopSpeaking(): { stopped: boolean } {
+  if (ttsProcess) {
+    try { ttsProcess.kill(); } catch { /* ignore */ }
+    ttsProcess = null;
+    return { stopped: true };
+  }
+  return { stopped: false };
 }
 
 export async function makeCall(number: string): Promise<{ called: boolean; error?: string }> {

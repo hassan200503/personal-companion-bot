@@ -1,7 +1,8 @@
+/* eslint-disable @typescript-eslint/no-explicit-any, no-empty, @typescript-eslint/no-require-imports */
 import { app, BrowserWindow, ipcMain, Tray, Menu, nativeImage, shell, net, session, type IpcMainInvokeEvent } from "electron";
 import { randomUUID } from "node:crypto";
 import { spawn, type ChildProcess } from 'node:child_process';
-import { appendFileSync, mkdirSync, writeFileSync } from "node:fs";
+import { appendFileSync, mkdirSync, writeFileSync, statSync } from "node:fs";
 import { dirname, join } from "node:path";
 import {
   createLogger,
@@ -36,10 +37,12 @@ import {
   DefaultToolExecutor,
   DefaultPolicyEngine,
   InMemoryConfirmationManager,
+  SqliteAuditLogger,
 } from "@companion/core";
 import { ipcChannels, type AppInfo } from "../shared/ipc";
 import type { ConversationEngine, Scheduler, Conversation, ConversationMessage, CredentialStore } from "@companion/core";
 import { createOsControlTools } from "../../../../packages/core/src/os-control/tools.js";
+import { stopSpeaking } from "../../../../packages/core/src/os-control/windows.js";
 import { createDesktopCredentialStore, createDesktopKeyProtector } from "./storage/adapters";
 
 app.setName("Companion");
@@ -63,6 +66,7 @@ let credentialStore: CredentialStore | null = null;
 let toolRegistry: DefaultToolRegistry | null = null;
 let toolExecutor: DefaultToolExecutor | null = null;
 let confirmationManager: InMemoryConfirmationManager | null = null;
+let auditLogger: SqliteAuditLogger | null = null;
 let voiceProcess: ChildProcess | null = null;
 let defaultModel = '';
 let tray: Tray | null = null;
@@ -131,6 +135,7 @@ async function openStorage(): Promise<void> {
       logger
     });
     if (companionDatabase) {
+      auditLogger = new SqliteAuditLogger(companionDatabase.raw);
       try {
         const registry = new DefaultStepRegistry();
         registry.register(new SystemCheckStep());
@@ -271,6 +276,25 @@ function assertTrustedSender(event: IpcMainInvokeEvent, suppliedToken: unknown):
   }
 }
 
+/* eslint-disable @typescript-eslint/no-explicit-any */
+function normalizeMemoryProfile(profile: any): any {
+  const p = profile && typeof profile === 'object' ? { ...profile } : {};
+  const rawNotes = Array.isArray(p.notes) ? p.notes : [];
+  const now = Date.now();
+  const notes = rawNotes.map((n: any) => {
+    if (typeof n === 'string') return { id: Math.random().toString(36).slice(2), note: n, confidence: 0.6, createdAt: new Date().toISOString(), lastUsedAt: new Date().toISOString() };
+    return { ...n, id: n.id || Math.random().toString(36).slice(2), confidence: typeof n.confidence === 'number' ? n.confidence : 0.6, createdAt: n.createdAt || new Date().toISOString(), lastUsedAt: n.lastUsedAt || new Date().toISOString() };
+  }).filter((n: any) => {
+    if (n.expiresAt && new Date(n.expiresAt).getTime() < now) return false;
+    const ageDays = (now - new Date(n.createdAt).getTime()) / 86400000;
+    const decay = Math.floor(ageDays / 30) * 0.05;
+    n.confidence = Math.max(0.1, (n.confidence ?? 0.6) - decay);
+    return n.confidence >= 0.1;
+  });
+  p.notes = notes;
+  return p;
+}
+
 function registerIpc(): void {
   ipcMain.handle(ipcChannels.appInfo, (event, suppliedToken: unknown): AppInfo => {
     assertTrustedSender(event, suppliedToken);
@@ -331,13 +355,46 @@ function registerIpc(): void {
     };
   });
 
+  ipcMain.handle(ipcChannels.chatDeleteConversation, async (event, suppliedToken: unknown, id: string): Promise<unknown> => {
+    assertTrustedSender(event, suppliedToken);
+    if (!conversationEngine) throw new Error("Chat unavailable");
+    const ok = conversationEngine.deleteConversation(id);
+    return { ok };
+  });
+
   ipcMain.handle(ipcChannels.chatSendMessage, async (event, suppliedToken: unknown, conversationId: string, content: string): Promise<unknown> => {
     assertTrustedSender(event, suppliedToken);
     if (!conversationEngine) throw new Error("Chat unavailable");
+    const lc = String(content || '').toLowerCase().trim();
+    if (lc.startsWith('forget ')) {
+      const target = lc.slice(7).trim();
+      try {
+        const row = companionDatabase?.raw.prepare('SELECT value FROM settings WHERE key = ?').get('memory.profile') as { value?: string } | undefined;
+        const profile = normalizeMemoryProfile(row?.value ? JSON.parse(row.value) : {});
+        const notes = Array.isArray(profile.notes) ? profile.notes : [];
+        const kept = notes.filter((n: any) => !String(n.note || '').toLowerCase().includes(target));
+        const removed = notes.length - kept.length;
+        profile.notes = kept;
+        companionDatabase?.raw.prepare(
+          'INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at'
+        ).run('memory.profile', JSON.stringify(profile), new Date().toISOString());
+        const conv = conversationEngine.getConversation(conversationId);
+        if (conv) {
+          const nowIso = new Date().toISOString();
+          conv.messages.push({ id: randomUUID(), role: 'user', content, createdAt: nowIso, status: 'completed' } as any);
+          const reply = removed > 0 ? `Forgot ${removed} matching memory note(s).` : 'No matching memory found to forget.';
+          const am = { id: randomUUID(), role: 'assistant', content: reply, createdAt: nowIso, status: 'completed' } as any;
+          conv.messages.push(am);
+          conv.updatedAt = nowIso;
+          try { (conversationEngine as any).conversationStore?.saveConversation?.(conv); } catch {}
+          return { id: am.id, role: am.role, content: am.content, createdAt: am.createdAt };
+        }
+      } catch {}
+    }
     // Inject memory profile into system prompt
     try {
       const row = companionDatabase?.raw.prepare('SELECT value FROM settings WHERE key = ?').get('memory.profile') as { value?: string } | undefined;
-      const profile = row?.value ? JSON.parse(row.value) : {};
+      const profile = normalizeMemoryProfile(row?.value ? JSON.parse(row.value) : {});
       const ownerRow = companionDatabase?.raw.prepare('SELECT value FROM settings WHERE key = ?').get('owner.profile') as { value?: string } | undefined;
       const owner = ownerRow?.value ? JSON.parse(ownerRow.value) : {};
       const base = 'You are Companion, a helpful private assistant.';
@@ -362,8 +419,18 @@ function registerIpc(): void {
         const parsed = JSON.parse(resp.content.trim().replace(/^```json\\s*/i, '').replace(/```$/i, ''));
         if (parsed && typeof parsed === 'object' && Object.keys(parsed).length) {
           const row = companionDatabase?.raw.prepare('SELECT value FROM settings WHERE key = ?').get('memory.profile') as { value?: string } | undefined;
-          const existing = row?.value ? JSON.parse(row.value) : {};
-          const merged = { ...existing, ...parsed };
+          const existing = normalizeMemoryProfile(row?.value ? JSON.parse(row.value) : {});
+          const merged = { ...existing };
+          if (parsed && typeof parsed === 'object') {
+            Object.keys(parsed).forEach((k) => {
+              if (k === 'notes' && Array.isArray(parsed.notes)) {
+                const norm = parsed.notes.map((n: any) => typeof n === 'string' ? { id: Math.random().toString(36).slice(2), note: n, confidence: 0.6, createdAt: new Date().toISOString(), lastUsedAt: new Date().toISOString() } : n);
+                merged.notes = [...(existing.notes || []), ...norm];
+              } else {
+                merged[k] = parsed[k];
+              }
+            });
+          }
           companionDatabase?.raw.prepare(
             'INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at'
           ).run('memory.profile', JSON.stringify(merged), new Date().toISOString());
@@ -377,6 +444,19 @@ function registerIpc(): void {
       assertTrustedSender(event, suppliedToken);
       if (typeof url !== 'string' || !/^https?:\/\//.test(url)) throw new Error('Invalid URL');
       await shell.openExternal(url);
+    });
+
+    ipcMain.handle(ipcChannels.appCheckUpdates, async (event, suppliedToken: unknown): Promise<unknown> => {
+      assertTrustedSender(event, suppliedToken);
+      try {
+        const res = await net.fetch('https://api.github.com/repos/hassan200503/personal-companion-bot/releases/latest');
+        const data: any = await res.json();
+        const latest = String(data?.tag_name || '').replace(/^v/, '');
+        const current = app.getVersion();
+        return { current, latest, updateAvailable: latest !== current && latest.length > 0, url: data?.html_url };
+      } catch (e) {
+        return { current: app.getVersion(), latest: '', updateAvailable: false, error: String(e) };
+      }
     });
 
     ipcMain.handle(ipcChannels.providersCatalog, async (event, suppliedToken: unknown): Promise<unknown> => {
@@ -481,7 +561,7 @@ function registerIpc(): void {
     assertTrustedSender(event, suppliedToken);
     try {
       const row = companionDatabase?.raw.prepare('SELECT value FROM settings WHERE key = ?').get('memory.profile') as { value?: string } | undefined;
-      return row?.value ? JSON.parse(row.value) : {};
+      return normalizeMemoryProfile(row?.value ? JSON.parse(row.value) : {});
     } catch {
       return {};
     }
@@ -490,9 +570,10 @@ function registerIpc(): void {
   ipcMain.handle(ipcChannels.memorySetProfile, (event, suppliedToken: unknown, profile: unknown): unknown => {
     assertTrustedSender(event, suppliedToken);
     try {
+      const norm = normalizeMemoryProfile(profile ?? {});
       companionDatabase?.raw.prepare(
         'INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at'
-      ).run('memory.profile', JSON.stringify(profile ?? {}), new Date().toISOString());
+      ).run('memory.profile', JSON.stringify(norm), new Date().toISOString());
       return { ok: true };
     } catch (e) {
       return { ok: false, error: String(e) };
@@ -584,6 +665,16 @@ function registerIpc(): void {
     return { stopped: true };
   });
 
+  ipcMain.handle(ipcChannels.voiceStopSpeaking, (event, suppliedToken: unknown): unknown => {
+    assertTrustedSender(event, suppliedToken);
+    return stopSpeaking();
+  });
+
+  ipcMain.handle(ipcChannels.auditList, (event, suppliedToken: unknown): unknown => {
+    assertTrustedSender(event, suppliedToken);
+    return auditLogger ? auditLogger.list(100) : [];
+  });
+
   // OS control
   ipcMain.handle(ipcChannels.osListTools, (event, suppliedToken: unknown): unknown => {
     assertTrustedSender(event, suppliedToken);
@@ -599,7 +690,7 @@ function registerIpc(): void {
       platform: process.platform,
       permissions: new Set(['os.open','os.media','os.speak','os.telephony','os.exec','memory.read','memory.write','drafts.write']),
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      audit: { record: () => {}, list: () => [] } as any,
+      audit: auditLogger ?? { record: () => {}, list: () => [] } as any,
       confirmation: confirmationManager,
       now: () => new Date(),
       logger,
@@ -749,15 +840,20 @@ function registerIpc(): void {
       platform: process.platform,
       permissions: new Set(['os.open','os.media','os.speak','os.telephony','os.exec','memory.read','memory.write','drafts.write']),
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      audit: { record: () => {}, list: () => [] } as any,
+      audit: auditLogger ?? { record: () => {}, list: () => [] } as any,
       confirmation: cm,
       now: () => new Date(),
       logger,
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } as any;
     let result = await toolExecutor!.execute({ toolName, input, trust: 'trusted' }, ctx);
-    if (result.status === 'failed') {
-      await new Promise((r) => setTimeout(r, 300));
+    const verifyCapture = (r: any) => {
+      const pth = r?.result?.path || r?.output?.path;
+      if (!pth) return true;
+      try { const st = statSync(pth); return st.size > 0; } catch { return false; }
+    };
+    if (result.status === 'failed' || (/(screenshot|photo|video)/i.test(toolName) && !verifyCapture(result))) {
+      await new Promise((r) => setTimeout(r, 500));
       result = await toolExecutor!.execute({ toolName, input, trust: 'trusted' }, ctx);
     }
     if (result.status === 'needs_confirmation' && result.actionHash) {

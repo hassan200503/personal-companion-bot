@@ -56,8 +56,12 @@ declare global {
         memoryClearProfile(): Promise<any>;
         memoryGetOwner(): Promise<any>;
         memorySetOwner(owner: unknown): Promise<any>;
+        auditList(): Promise<any>;
         voiceGetSettings(): Promise<any>;
         voiceSetSettings(settings: unknown): Promise<any>;
+        voiceStopSpeaking(): Promise<any>;
+        appCheckUpdates(): Promise<any>;
+        chatDeleteConversation(id: string): Promise<any>;
         onVoiceTranscript(cb: (payload: { text: string; final: boolean }) => void): () => void;
     };
   }

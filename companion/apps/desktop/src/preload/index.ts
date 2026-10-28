@@ -37,8 +37,10 @@ const api = Object.freeze({
   memoryClearProfile: (): Promise<unknown> => ipcRenderer.invoke(ipcChannels.memoryClearProfile, sessionToken),
   memoryGetOwner: (): Promise<unknown> => ipcRenderer.invoke(ipcChannels.memoryGetOwner, sessionToken),
   memorySetOwner: (owner: unknown): Promise<unknown> => ipcRenderer.invoke(ipcChannels.memorySetOwner, sessionToken, owner),
+  auditList: (): Promise<unknown> => ipcRenderer.invoke(ipcChannels.auditList, sessionToken),
   voiceGetSettings: (): Promise<unknown> => ipcRenderer.invoke(ipcChannels.voiceGetSettings, sessionToken),
   voiceSetSettings: (settings: unknown): Promise<unknown> => ipcRenderer.invoke(ipcChannels.voiceSetSettings, sessionToken, settings),
+  voiceStopSpeaking: (): Promise<unknown> => ipcRenderer.invoke(ipcChannels.voiceStopSpeaking, sessionToken),
   onVoiceTranscript: (cb: (payload: { text: string; final: boolean }) => void): (() => void) => {
     const handler = (_e: Electron.IpcRendererEvent, payload: { text: string; final: boolean }) => cb(payload);
     ipcRenderer.on(ipcChannels.voiceTranscript, handler);

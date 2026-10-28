@@ -52,6 +52,8 @@ export default function App() {
   const [voiceError, setVoiceError] = useState('');
   const [profile, setProfile] = useState<any>({});
   const [voiceSettings, setVoiceSettings] = useState<any>({ voice: '', rate: 0 });
+  const [auditLogs, setAuditLogs] = useState<any[]>([]);
+  const [updateInfo, setUpdateInfo] = useState<any>(null);
   const [muted, setMuted] = useState(false);
   const [owner, setOwner] = useState<any>({});
   const [speaking, setSpeaking] = useState(false);
@@ -83,6 +85,12 @@ export default function App() {
       const text = payload?.text?.trim();
       if (!text) return;
       if (!voiceModeRef.current) return;
+      // barge-in: stop any TTS
+      void window.companion.voiceStopSpeaking();
+      if (!payload.final) {
+        setInterimTranscript(text);
+        return;
+      }
       setInterimTranscript('');
       setVoiceState('processing');
       voiceProcessingRef.current = true;
@@ -385,6 +393,16 @@ export default function App() {
           <button onClick={async () => { await window.companion.voiceSetSettings(voiceSettings); }}>Save voice</button>
         </div>
         <div className="sidebar-card">
+          <div className="eyebrow">Audit log</div>
+          <button onClick={async () => { setAuditLogs(await window.companion.auditList()); }}>Load audit</button>
+          <pre style={{ fontSize: 10, whiteSpace: 'pre-wrap', maxHeight: 120, overflow: 'auto' }}>{JSON.stringify(auditLogs, null, 2)}</pre>
+        </div>
+        <div className="sidebar-card">
+          <div className="eyebrow">Updates</div>
+          <button onClick={async () => { setUpdateInfo(await window.companion.appCheckUpdates()); }}>Check updates</button>
+          <pre style={{ fontSize: 10, whiteSpace: 'pre-wrap' }}>{JSON.stringify(updateInfo, null, 2)}</pre>
+        </div>
+        <div className="sidebar-card">
           <div className="eyebrow">Memory profile</div>
           <pre style={{ fontSize: 11, whiteSpace: 'pre-wrap' }}>{JSON.stringify(profile, null, 2)}</pre>
           <button onClick={async () => { await window.companion.memoryClearProfile(); setProfile({}); }}>Clear memory</button>
@@ -606,14 +624,21 @@ export default function App() {
               <button className="primary" onClick={newConversation} disabled={busy}>New chat</button>
               <div className="conversation-list">
                 {conversations.map((c: any) => (
-                  <button
-                    key={c.id}
-                    className={c.id === activeConv ? 'conversation active' : 'conversation'}
-                    onClick={() => loadConversation(c.id)}
-                  >
-                    <span>{c.title || 'Untitled chat'}</span>
-                    <small>{c.messageCount} messages</small>
-                  </button>
+                  <div key={c.id} className="conversation-row" style={{ display: 'flex', gap: 4 }}>
+                    <button
+                      className={c.id === activeConv ? 'conversation active' : 'conversation'}
+                      onClick={() => loadConversation(c.id)}
+                      style={{ flex: 1 }}
+                    >
+                      <span>{c.title || 'Untitled chat'}</span>
+                      <small>{c.messageCount} messages</small>
+                    </button>
+                    <button onClick={async () => {
+                      await window.companion.chatDeleteConversation(c.id);
+                      setConversations(await window.companion.chatListConversations());
+                      if (activeConv === c.id) { setActiveConv(null); setMessages([]); }
+                    }} title="Delete chat">x</button>
+                  </div>
                 ))}
               </div>
             </aside>
