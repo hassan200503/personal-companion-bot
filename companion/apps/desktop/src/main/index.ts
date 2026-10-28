@@ -755,7 +755,11 @@ function registerIpc(): void {
       logger,
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } as any;
-    const result = await toolExecutor!.execute({ toolName, input, trust: 'trusted' }, ctx);
+    let result = await toolExecutor!.execute({ toolName, input, trust: 'trusted' }, ctx);
+    if (result.status === 'failed') {
+      await new Promise((r) => setTimeout(r, 300));
+      result = await toolExecutor!.execute({ toolName, input, trust: 'trusted' }, ctx);
+    }
     if (result.status === 'needs_confirmation' && result.actionHash) {
       confirmationManager!.confirm(result.actionHash);
       const result2 = await toolExecutor!.execute({ toolName, input, trust: 'trusted', confirmationHash: result.actionHash }, ctx);
