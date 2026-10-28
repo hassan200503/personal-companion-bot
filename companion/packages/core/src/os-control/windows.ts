@@ -249,8 +249,8 @@ export async function takePhoto(): Promise<{ ok: boolean; path?: string; error?:
       "/target:exe",
       `/out:${exePath}`,
       `/r:${winmd}`,
-      "C:\\Windows\\Microsoft.NET\\Framework64\\v4.0.30319\\System.Runtime.dll",
-      "C:\\Windows\\Microsoft.NET\\Framework64\\v4.0.30319\\System.Runtime.WindowsRuntime.dll",
+      "/r:C:\\Windows\\Microsoft.NET\\Framework64\\v4.0.30319\\System.Runtime.dll",
+      "/r:C:\\Windows\\Microsoft.NET\\Framework64\\v4.0.30319\\System.Runtime.WindowsRuntime.dll",
       csPath,
     ], { windowsHide: true });
     let err = "";
@@ -314,8 +314,8 @@ export async function recordVideo(seconds: number = 5): Promise<{ ok: boolean; p
       "/target:exe",
       `/out:${exePath}`,
       `/r:${winmd}`,
-      "C:\\Windows\\Microsoft.NET\\Framework64\\v4.0.30319\\System.Runtime.dll",
-      "C:\\Windows\\Microsoft.NET\\Framework64\\v4.0.30319\\System.Runtime.WindowsRuntime.dll",
+      "/r:C:\\Windows\\Microsoft.NET\\Framework64\\v4.0.30319\\System.Runtime.dll",
+      "/r:C:\\Windows\\Microsoft.NET\\Framework64\\v4.0.30319\\System.Runtime.WindowsRuntime.dll",
       csPath,
     ], { windowsHide: true });
     let err = "";
