@@ -510,17 +510,46 @@ function registerIpc(): void {
     if (lower.includes('screenshot') || lower.includes('capture screen') || lower.includes('screen capture')) {
       toolName = 'os.screenshot'; input = {};
     }
+    // WhatsApp send
+    else if (lower.includes('whatsapp') && (lower.includes('send') || lower.includes('message') || lower.includes('tell'))) {
+      let message = '';
+      const qm = trimmed.match(/["']([^"']+)["']/);
+      if (qm) message = qm[1] ?? message;
+      let contact = '';
+      const cm = trimmed.match(/\bto\s+([A-Za-z0-9 _-]+?)(?:\s+on\s+whatsapp|\s+in\s+whatsapp|\s+via\s+whatsapp|$)/i);
+      if (cm) contact = (cm[1] ?? '').trim();
+      if (!contact) contact = 'contact';
+      if (!message) message = trimmed;
+      toolName = 'os.whatsappSend'; input = { contact, message };
+    }
     // Photo capture
     else if (lower.includes('photo') || lower.includes('picture') || lower.includes('capture image') || lower.includes('take image')) {
       toolName = 'os.photo'; input = {};
     }
     // Video recording
-    else if (lower.includes('video') || lower.includes('record')) {
+    else if ((lower.includes('video') || lower.includes('record')) && !lower.includes('play') && !lower.includes('song') && !lower.includes('music')) {
       toolName = 'os.video'; input = { seconds: 5 };
     }
     // Camera open
     else if (lower.includes('camera') || lower.includes('webcam')) {
       toolName = 'os.camera'; input = { mode: lower.includes('video') ? 'video' : 'photo' };
+    }
+    // Browser / search
+    else if (lower.includes('search') || lower.includes('google') || lower.includes('browser') || lower.includes('chrome')) {
+      let query = '';
+      const qm = trimmed.match(/["']([^"']+)["']/);
+      if (qm) query = qm[1] ?? query;
+      else {
+        const m = trimmed.match(/search\s+(.+)$/i);
+        if (m) query = (m[1] ?? '').trim();
+        else {
+          const m2 = trimmed.match(/(?:browser|chrome)\s+(.+)$/i);
+          if (m2) query = (m2[1] ?? '').trim();
+        }
+      }
+      query = query.replace(/\s*(in|on|using)\s+(browser|chrome|google).*$/i, '').trim();
+      const url = query ? `https://www.google.com/search?q=${encodeURIComponent(query)}` : 'https://www.google.com';
+      toolName = 'os.open'; input = { target: url };
     }
     // Open
     else if (lower.startsWith('open ')) {

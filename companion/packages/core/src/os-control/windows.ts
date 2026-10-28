@@ -94,8 +94,18 @@ export async function playMedia(target: string): Promise<{ played: boolean; reso
     }
     if (found) t = found;
     else {
-      const q = encodeURIComponent(t.replace(/['"]/g, '').trim());
-      const url = `https://www.youtube.com/results?search_query=${q}`;
+      // Try to resolve and play the first YouTube result.
+      const q = t.replace(/['"]/g, '').trim();
+      let videoId: string | null = null;
+      try {
+        const res = await fetch(`https://www.youtube.com/results?search_query=${encodeURIComponent(q)}`, { headers: { 'User-Agent': 'Mozilla/5.0' } });
+        const html = await res.text();
+        const m = html.match(/watch\?v=([a-zA-Z0-9_-]{11})/);
+        if (m) videoId = m[1] ?? null;
+      } catch { /* ignore */ }
+      const url = videoId
+        ? `https://www.youtube.com/watch?v=${videoId}&autoplay=1`
+        : `https://www.youtube.com/results?search_query=${encodeURIComponent(q)}`;
       const r = await new Promise<{ ok: boolean; error?: string }>((resolve) => {
         const child = spawn('cmd', ['/c', 'start', '', url], { windowsHide: true });
         let err = '';
@@ -339,3 +349,24 @@ export async function recordVideo(seconds: number = 5): Promise<{ ok: boolean; p
   });
 }
 
+export async function sendWhatsAppMessage(contact: string, message: string): Promise<{ sent: boolean; error?: string }> {
+  const encoded = encodeURIComponent(message);
+  const phone = contact.replace(/[^\d+]/g, "");
+  const url = phone.length >= 7 ? `https://wa.me/${phone}?text=${encoded}` : `whatsapp://send?text=${encoded}`;
+  const open = await new Promise<{ ok: boolean; error?: string }>((resolve) => {
+    const child = spawn("cmd", ["/c", "start", "", url], { windowsHide: true });
+    let err = "";
+    child.stderr.on("data", (d) => { err += d.toString(); });
+    child.on("close", (code) => resolve(code === 0 ? { ok: true } : { ok: false, error: err.trim() || `exit ${code}` }));
+    child.on("error", (e) => resolve({ ok: false, error: e.message }));
+  });
+  if (!open.ok) return { sent: false, error: open.error };
+  await new Promise((r) => setTimeout(r, 4000));
+  const ps = `$wsh = New-Object -ComObject WScript.Shell; if ($wsh.AppActivate("WhatsApp")) { Start-Sleep -Milliseconds 500; Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.SendKeys]::SendWait("{ENTER}") }`;
+  await new Promise((resolve) => {
+    const child = spawn("powershell", ["-NoProfile", "-Command", ps], { windowsHide: true });
+    child.on("close", () => resolve(null));
+    child.on("error", () => resolve(null));
+  });
+  return { sent: true };
+}

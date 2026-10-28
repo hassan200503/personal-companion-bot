@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import type { ToolDefinition } from '../tools/contracts.js';
-import { openTarget, playMedia, speakText, makeCall, runCommand, takeScreenshot, takePhoto, recordVideo } from './windows.js';
+import { openTarget, playMedia, speakText, makeCall, runCommand, takeScreenshot, takePhoto, recordVideo, sendWhatsAppMessage } from './windows.js';
 
 export function createOsOpenTool(): ToolDefinition<{ target: string }, { opened: boolean }> {
   return {
@@ -206,6 +206,28 @@ export function createOsVideoTool(): ToolDefinition<{ seconds?: number }, { ok: 
   };
 }
 
+export function createOsWhatsAppTool(): ToolDefinition<{ contact: string; message: string }, { sent: boolean }> {
+  return {
+    name: 'os.whatsappSend',
+    version: '1.0.0',
+    description: 'Send a WhatsApp message to a contact (phone number or name).',
+    inputSchema: z.object({ contact: z.string().min(1), message: z.string().min(1) }),
+    outputSchema: z.object({ sent: z.boolean() }),
+    requiredPermissions: ['os.open'],
+    dataClassification: 'personal',
+    riskClass: 2,
+    reversible: false,
+    timeoutMs: 15_000,
+    cancellable: true,
+    audit: 'metadata',
+    platforms: ['all'],
+    execute: async (_ctx, input) => {
+      const r = await sendWhatsAppMessage(input.contact, input.message);
+      return { sent: r.sent };
+    },
+  };
+}
+
 export function createOsControlTools(): ToolDefinition<unknown, unknown>[] {
   return [
     createOsOpenTool() as ToolDefinition<unknown, unknown>,
@@ -217,5 +239,6 @@ export function createOsControlTools(): ToolDefinition<unknown, unknown>[] {
     createOsCameraTool() as ToolDefinition<unknown, unknown>,
     createOsPhotoTool() as ToolDefinition<unknown, unknown>,
     createOsVideoTool() as ToolDefinition<unknown, unknown>,
+    createOsWhatsAppTool() as ToolDefinition<unknown, unknown>,
   ];
 }
