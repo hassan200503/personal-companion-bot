@@ -485,10 +485,12 @@ function registerIpc(): void {
       signal: new AbortController().signal,
       platform: process.platform,
       permissions: new Set(['os.open','os.media','os.speak','os.telephony','os.exec','memory.read','memory.write','drafts.write']),
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
       audit: { record: () => {}, list: () => [] } as any,
       confirmation: confirmationManager,
       now: () => new Date(),
       logger,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } as any;
     const result = await toolExecutor.execute({ toolName, input, trust: 'trusted', confirmationHash }, ctx);
     return result;
@@ -500,7 +502,7 @@ function registerIpc(): void {
     const trimmed = String(text ?? '').trim();
     const lower = trimmed.toLowerCase();
     let toolName: string | null = null;
-    let input: any = {};
+    let input: Record<string, unknown> = {};
     // Normalize quotes
     const clean = trimmed.replace(/^["']|["']$/g, '').trim();
 
@@ -559,10 +561,12 @@ function registerIpc(): void {
       signal: new AbortController().signal,
       platform: process.platform,
       permissions: new Set(['os.open','os.media','os.speak','os.telephony','os.exec','memory.read','memory.write','drafts.write']),
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
       audit: { record: () => {}, list: () => [] } as any,
       confirmation: cm,
       now: () => new Date(),
       logger,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } as any;
     const result = await toolExecutor!.execute({ toolName, input, trust: 'trusted' }, ctx);
     if (result.status === 'needs_confirmation' && result.actionHash) {
@@ -708,6 +712,8 @@ app.on("before-quit", () => {
   companionDatabase?.close();
   companionDatabase = null;
 });
+
+
 
 
 

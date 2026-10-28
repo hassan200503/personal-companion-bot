@@ -114,7 +114,7 @@ export function createOsRunTool(): ToolDefinition<{ command: string; args?: stri
 }
 
 
-export function createOsScreenshotTool(): ToolDefinition<{}, { ok: boolean; path?: string }> {
+export function createOsScreenshotTool(): ToolDefinition<Record<string, never>, { ok: boolean; path?: string }> {
   return {
     name: 'os.screenshot',
     version: '1.0.0',
@@ -150,14 +150,14 @@ export function createOsCameraTool(): ToolDefinition<{ mode?: 'photo' | 'video' 
     cancellable: true,
     audit: 'metadata',
     platforms: ['all'],
-    execute: async (_ctx, _input) => {
+    execute: async () => {
       const r = await openTarget('camera');
       return { opened: r.opened };
     },
   };
 }
 
-export function createOsPhotoTool(): ToolDefinition<{}, { ok: boolean; path?: string }> {
+export function createOsPhotoTool(): ToolDefinition<Record<string, never>, { ok: boolean; path?: string }> {
   return {
     name: 'os.photo',
     version: '1.0.0',

@@ -33,7 +33,7 @@ const api = Object.freeze({
   voiceStart: (): Promise<unknown> => ipcRenderer.invoke(ipcChannels.voiceStart, sessionToken),
   voiceStop: (): Promise<unknown> => ipcRenderer.invoke(ipcChannels.voiceStop, sessionToken),
   onVoiceTranscript: (cb: (payload: { text: string; final: boolean }) => void): (() => void) => {
-    const handler = (_e: any, payload: any) => cb(payload);
+    const handler = (_e: Electron.IpcRendererEvent, payload: { text: string; final: boolean }) => cb(payload);
     ipcRenderer.on(ipcChannels.voiceTranscript, handler);
     return () => ipcRenderer.removeListener(ipcChannels.voiceTranscript, handler);
   },

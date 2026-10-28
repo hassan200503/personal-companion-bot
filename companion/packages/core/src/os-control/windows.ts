@@ -37,7 +37,7 @@ export async function openTarget(target: string): Promise<{ opened: boolean; res
     if (r.ok) return { opened: true, resolved: alias };
   }
 
-  let r = await runStart(t);
+  const r = await runStart(t);
   if (r.ok) return { opened: true, resolved: t };
 
   try {
@@ -61,6 +61,7 @@ export async function playMedia(target: string): Promise<{ played: boolean; reso
   if (!t) return { played: false, error: 'empty_target' };
 
   const { existsSync } = await import('node:fs');
+  const { readdirSync } = await import('node:fs');
   const pathMod = await import('node:path');
 
   if (!existsSync(t)) {
@@ -75,7 +76,6 @@ export async function playMedia(target: string): Promise<{ played: boolean; reso
     const walk = (dir: string, depth: number): string | null => {
       if (depth < 0) return null;
       try {
-        const { readdirSync } = require('node:fs');
         for (const entry of readdirSync(dir, { withFileTypes: true })) {
           const full = pathMod.join(dir, entry.name);
           if (entry.isFile() && entry.name.toLowerCase().includes(t.toLowerCase())) return full;
