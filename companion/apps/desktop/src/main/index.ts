@@ -588,6 +588,24 @@ function registerIpc(): void {
     else if (lower.startsWith('screenshot') || lower === 'take screenshot' || lower.startsWith('capture screen')) {
       toolName = 'os.screenshot'; input = {};
     }
+    if (!toolName && providerRouter && defaultModel) {
+      try {
+        const resp = await providerRouter.complete({
+          model: defaultModel,
+          messages: [
+            { role: 'system', content: 'You are an OS control router. Map the user command to one tool. Respond ONLY with JSON: {"tool": "<toolname or none>", "input": {}}. Tools: os.open(target), os.play(target), os.speak(text), os.call(number), os.run(command), os.screenshot(), os.camera(mode), os.photo(), os.video(seconds), os.whatsappSend(contact,message). If no OS action, tool="none".' },
+            { role: 'user', content: trimmed },
+          ],
+          temperature: 0,
+          jsonMode: true,
+        }, new AbortController().signal);
+        const parsed = JSON.parse(resp.content.trim().replace(/^```json\s*/i, '').replace(/```$/i, ''));
+        if (parsed && typeof parsed.tool === 'string' && parsed.tool !== 'none') {
+          toolName = parsed.tool;
+          input = parsed.input && typeof parsed.input === 'object' ? parsed.input : {};
+        }
+      } catch { /* ignore */ }
+    }
     if (!toolName) return { handled: false };
     const cm = confirmationManager!;
     const ctx = {
