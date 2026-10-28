@@ -51,6 +51,7 @@ export default function App() {
   const [interimTranscript, setInterimTranscript] = useState('');
   const [voiceError, setVoiceError] = useState('');
   const [profile, setProfile] = useState<any>({});
+  const [muted, setMuted] = useState(false);
   const [owner, setOwner] = useState<any>({});
   const [speaking, setSpeaking] = useState(false);
   const voiceModeRef = useRef(false);
@@ -93,10 +94,13 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    if (activeConv && !voiceModeRef.current) {
+    if (activeConv && !voiceModeRef.current && !muted) {
       startListening();
     }
-  }, [activeConv]);
+    if (muted && voiceModeRef.current) {
+      stopListening();
+    }
+  }, [activeConv, muted]);
 
   async function runOnboarding() {
     setBusy(true);
@@ -243,6 +247,7 @@ export default function App() {
   }
 
   async function speakReply(content: string): Promise<void> {
+    if (muted) return;
     if (!content.trim()) return;
     speakingRef.current = true;
     setSpeaking(true);
@@ -616,6 +621,7 @@ export default function App() {
                 </div>
                 <div className="voice-actions">
                   {voiceMode ? <button className="danger" onClick={stopListening}>Pause listening</button> : <span className="muted">Always listening…</span>}
+                  <button onClick={() => setMuted((m) => !m)}>{muted ? 'Unmute' : 'Mute'}</button>
                 </div>
                 <div className="living-indicator" aria-live="polite">
                   <span className="pulse" /> Companion is always listening and learning
