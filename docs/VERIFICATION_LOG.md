@@ -257,3 +257,17 @@ Important limitation: free-tier availability, regional eligibility and quotas re
 | V-20 | Official Gemini API errors: `https://ai.google.dev/gemini-api/docs/api-errors` | VERIFIED: HTTP 404 can mean `model_not_found`; the previous fixed-model probe could therefore reject an otherwise valid key |
 | V-21 | Gemini provider implementation inspection | PASS: `models.list` is queried with the key, only models advertising `generateContent` are selected, and the selected model is reused for completion |
 | V-22 | `npm.cmd run verify` from `companion/` | PASS: lint, typecheck, 20 test files / 180 tests, and production build |
+
+## 14. v3 brief baseline and registry (2026-10-29)
+
+| ID | Command / inspection | Observed result |
+| --- | --- | --- |
+| V-23 | `git -C ... status --porcelain=v1`; `git log --oneline -15` | Clean worktree at baseline; HEAD `6244f85 Improve WhatsApp automation: search contact and send` |
+| V-24 | `npm.cmd run verify` from `companion/` | ESLint 0 errors / 6 warnings; TypeScript clean; 20 test files / 182 tests passed; Electron main/preload and Vite renderer built |
+| V-25 | Source inspection of `apps/desktop/src/main/index.ts` | Found: IPC grants every permission (`os.open`, `os.media`, `os.speak`, `os.telephony`, `os.exec`, `memory.read`, `memory.write`, `drafts.write`); `osTryCommand` auto-confirms class 3 results; no lock/elevation check |
+| V-26 | Source inspection of `packages/core/src/os-control/windows.ts` | Found: WhatsApp returns `sent: true` after SendKeys exit 0; `playMedia` scrapes YouTube results HTML; no postcondition observation |
+| V-27 | Source inspection of `apps/desktop/src/renderer/App.tsx` | Found: continuous dictation starts when a chat is active; mute is renderer-only; assistant text is spoken verbatim |
+| V-28 | Source inspection of core modules | Found: storage, onboarding, provider router, conversation persistence and memory approval tests; no persona, greeting, proactive, learning-threshold, UIA or injection tests |
+| V-29 | Adopted v3 brief and wrote `docs/REQUIREMENTS.md`, `docs/GAPS.md`, updated `docs/PROJECT_STATE.md` | Registry seeded from SC1-SC12 and K/V/O/W/M/P/L/S; v1 brief archived |
+
+Baseline conclusion: the foundation builds and 182 tests pass, but the companion does not meet SC1-SC12. The first fix must close the trust boundary because the current IPC path can run arbitrary commands and auto-confirm them.
