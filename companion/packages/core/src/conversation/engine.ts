@@ -101,6 +101,12 @@ export class DefaultConversationEngine implements ConversationEngine {
     if (model) this.defaultModel = model;
   }
 
+  resolveModel(): string {
+    if (this.defaultModel) return this.defaultModel;
+    const first = this.router.getProviders()[0];
+    return first?.model ?? '';
+  }
+
   setSystemPrompt(prompt: string): void {
     this.systemPrompt = prompt;
   }
@@ -144,11 +150,20 @@ export class DefaultConversationEngine implements ConversationEngine {
     let response: ChatCompletionResponse;
     try {
       if (this.cognition) {
-        const result = await this.decide(messages, userContent, memorySnippets, signal);
-        response = { model: result.model, content: result.content, finishReason: 'stop', metadata: { providerId: result.providerId } };
+        try {
+          const result = await this.decide(messages, userContent, memorySnippets, signal);
+          response = { model: result.model, content: result.content, finishReason: 'stop', metadata: { providerId: result.providerId } };
+        } catch {
+          // Fall back to a direct completion so the owner always gets a reply
+          // even when the provider cannot satisfy the typed cognition contract.
+          response = await this.router.complete(
+            { model: this.resolveModel(), messages, maxTokens: this.maxOutputTokens, temperature: this.temperature },
+            signal
+          );
+        }
       } else {
         response = await this.router.complete(
-          { model: this.defaultModel, messages, maxTokens: this.maxOutputTokens, temperature: this.temperature },
+          { model: this.resolveModel(), messages, maxTokens: this.maxOutputTokens, temperature: this.temperature },
           signal
         );
       }
