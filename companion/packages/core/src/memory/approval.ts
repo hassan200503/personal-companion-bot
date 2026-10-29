@@ -5,6 +5,16 @@ export function listApprovalInbox(repo: MemoryRepository): Memory[] {
   return repo.listProposed();
 }
 
+/** Prevents the consolidation job from re-proposing an item the owner rejected. */
+export function wasMemoryRejected(repo: MemoryRepository, category: string, content: string): boolean {
+  const normalizedCategory = category.trim().toLocaleLowerCase();
+  const normalizedContent = content.trim().toLocaleLowerCase();
+  return repo
+    .list({ approval: 'rejected', includeDeleted: true })
+    .some((memory) => memory.category.trim().toLocaleLowerCase() === normalizedCategory
+      && memory.content.trim().toLocaleLowerCase() === normalizedContent);
+}
+
 export function approveMemory(repo: MemoryRepository, id: string, now: () => Date = () => new Date()): void {
   const nowIso = now().toISOString();
   repo.updateApproval(id, 'approved', nowIso);

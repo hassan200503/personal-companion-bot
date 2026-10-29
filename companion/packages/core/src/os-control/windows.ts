@@ -1,4 +1,5 @@
-import { spawn, type ChildProcess } from 'node:child_process';
+import { execFile, spawn, type ChildProcess } from 'node:child_process';
+import { resolveLocalMedia, type MediaEntry } from '../media/resolver.js';
 
 export async function openTarget(target: string): Promise<{ opened: boolean; resolved?: string; error?: string }> {
   const t = target.trim();
@@ -34,7 +35,11 @@ export async function openTarget(target: string): Promise<{ opened: boolean; res
   }
   if (alias) {
     const r = await runStart(alias);
-    if (r.ok) return { opened: true, resolved: alias };
+    if (r.ok) {
+      const expectedProcess = processForAlias(alias);
+      if (!expectedProcess || await processExists(expectedProcess)) return { opened: true, resolved: alias };
+      return { opened: false, resolved: alias, error: 'postcondition_unverified' };
+    }
   }
 
   const r = await runStart(t);
@@ -56,7 +61,26 @@ export async function openTarget(target: string): Promise<{ opened: boolean; res
   return { opened: false, error: r.error ?? 'unable_to_open' };
 }
 
-export async function playMedia(target: string): Promise<{ played: boolean; resolved?: string; error?: string }> {
+function processForAlias(alias: string): string | undefined {
+  const normalized = alias.toLowerCase();
+  if (normalized === 'notepad') return 'notepad.exe';
+  if (normalized === 'calc') return 'CalculatorApp.exe';
+  if (normalized === 'mspaint') return 'mspaint.exe';
+  if (normalized === 'explorer') return 'explorer.exe';
+  if (normalized === 'msedge') return 'msedge.exe';
+  if (normalized === 'chrome') return 'chrome.exe';
+  return undefined;
+}
+
+function processExists(imageName: string): Promise<boolean> {
+  return new Promise((resolve) => {
+    execFile('tasklist', ['/FI', `IMAGENAME eq ${imageName}`], { windowsHide: true }, (error, stdout) => {
+      resolve(!error && new RegExp(`^${imageName.replace('.', '\\.')}(?:\\s|$)`, 'im').test(stdout));
+    });
+  });
+}
+
+export async function playMedia(target: string): Promise<{ played: boolean; resolved?: string; error?: string; candidates?: string[] }> {
   let t = target.trim();
   if (!t) return { played: false, error: 'empty_target' };
 
@@ -72,40 +96,35 @@ export async function playMedia(target: string): Promise<{ played: boolean; reso
       process.env.USERPROFILE ? pathMod.join(process.env.USERPROFILE, 'Desktop') : '',
       process.env.USERPROFILE ? pathMod.join(process.env.USERPROFILE, 'Documents') : '',
     ].filter(Boolean);
-    let found: string | null = null;
-    const walk = (dir: string, depth: number): string | null => {
-      if (depth < 0) return null;
+    const entries: MediaEntry[] = [];
+    const walk = (dir: string, depth: number): void => {
+      if (depth < 0 || entries.length >= 500) return;
       try {
         for (const entry of readdirSync(dir, { withFileTypes: true })) {
           const full = pathMod.join(dir, entry.name);
-          if (entry.isFile() && entry.name.toLowerCase().includes(t.toLowerCase())) return full;
+          if (entry.isFile() && /\.(mp3|wav|m4a|flac|mp4|mkv|avi|mov)$/i.test(entry.name)) {
+            entries.push({ path: full, title: entry.name.replace(/\.[^.]+$/, '') });
+          }
           if (entry.isDirectory()) {
-            const r = walk(full, depth - 1);
-            if (r) return r;
+            walk(full, depth - 1);
           }
         }
       } catch { /* ignore */ }
-      return null;
     };
     for (const root of roots) {
       if (!existsSync(root)) continue;
-      found = walk(root, 3);
-      if (found) break;
+      walk(root, 3);
+      if (entries.length >= 500) break;
     }
-    if (found) t = found;
-    else {
-      // Try to resolve and play the first YouTube result.
+    const local = resolveLocalMedia(t, entries);
+    if (local.status === 'matched') t = local.candidates[0]!.path;
+    else if (local.status === 'ambiguous') {
+      return { played: false, error: 'ambiguous_local_match', candidates: local.candidates.map((candidate) => candidate.title) };
+    } else {
+      // Do not scrape search-result HTML. Open the official search page and
+      // let the owner choose; the result is not a confirmed playback.
       const q = t.replace(/['"]/g, '').trim();
-      let videoId: string | null = null;
-      try {
-        const res = await fetch(`https://www.youtube.com/results?search_query=${encodeURIComponent(q)}`, { headers: { 'User-Agent': 'Mozilla/5.0' } });
-        const html = await res.text();
-        const m = html.match(/watch\?v=([a-zA-Z0-9_-]{11})/);
-        if (m) videoId = m[1] ?? null;
-      } catch { /* ignore */ }
-      const url = videoId
-        ? `https://www.youtube.com/watch?v=${videoId}&autoplay=1`
-        : `https://www.youtube.com/results?search_query=${encodeURIComponent(q)}`;
+      const url = `https://www.youtube.com/results?search_query=${encodeURIComponent(q)}`;
       const r = await new Promise<{ ok: boolean; error?: string }>((resolve) => {
         const child = spawn('cmd', ['/c', 'start', '', url], { windowsHide: true });
         let err = '';
@@ -113,7 +132,9 @@ export async function playMedia(target: string): Promise<{ played: boolean; reso
         child.on('close', (code) => resolve(code === 0 ? { ok: true } : { ok: false, error: err.trim() || `exit ${code}` }));
         child.on('error', (e) => resolve({ ok: false, error: e.message }));
       });
-      return r.ok ? { played: true, resolved: url } : { played: false, error: 'file_not_found' };
+      return r.ok
+        ? { played: false, resolved: url, error: 'search_page_opened_needs_selection' }
+        : { played: false, error: r.error ?? 'search_page_failed' };
     }
   }
 
@@ -370,7 +391,14 @@ function escapeSendKeys(s: string): string {
   }).join('');
 }
 
-export async function sendWhatsAppMessage(contact: string, message: string): Promise<{ sent: boolean; error?: string }> {
+export interface WhatsAppSendResult {
+  typed: boolean;
+  sent: boolean;
+  verified: boolean;
+  error?: string;
+}
+
+export async function sendWhatsAppMessage(contact: string, message: string): Promise<WhatsAppSendResult> {
   const phone = contact.replace(/[^\d+]/g, '');
   const isPhone = phone.length >= 7;
   const encoded = encodeURIComponent(message);
@@ -382,7 +410,7 @@ export async function sendWhatsAppMessage(contact: string, message: string): Pro
     child.on('close', (code) => resolve(code === 0 ? { ok: true } : { ok: false, error: err.trim() || `exit ${code}` }));
     child.on('error', (e) => resolve({ ok: false, error: e.message }));
   });
-  if (!open.ok) return { sent: false, error: open.error };
+  if (!open.ok) return { typed: false, sent: false, verified: false, error: open.error };
   await new Promise((r) => setTimeout(r, isPhone ? 4000 : 5000));
   const contactEsc = escapeSendKeys(contact);
   const messageEsc = escapeSendKeys(message);
@@ -402,10 +430,15 @@ export async function sendWhatsAppMessage(contact: string, message: string): Pro
   }
   steps.push('$wsh.SendKeys("{ENTER}")');
   const ps = steps.join('; ');
-  const ok = await new Promise<boolean>((resolve) => {
+  const typed = await new Promise<boolean>((resolve) => {
     const child = spawn('powershell', ['-NoProfile', '-Command', ps], { windowsHide: true });
     child.on('close', (c) => { resolve(c === 0); });
     child.on('error', () => resolve(false));
   });
-  return ok ? { sent: true } : { sent: false, error: 'UI automation failed' };
+
+  // Keystrokes are not observation. Only an accessibility-tree read of the new
+  // outgoing bubble may ever set sent/verified to true.
+  return typed
+    ? { typed: true, sent: false, verified: false, error: 'typed_but_unconfirmed' }
+    : { typed: false, sent: false, verified: false, error: 'ui_automation_failed' };
 }

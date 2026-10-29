@@ -53,5 +53,11 @@ export class InMemoryConfirmationManager implements ConfirmationManager {
       (p as PendingConfirmation & { confirmed?: boolean }).confirmed = false;
     }
   }
+
+  rejectAll(): number {
+    const count = this.pending.size;
+    this.pending.clear();
+    return count;
+  }
 }
 

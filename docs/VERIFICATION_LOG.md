@@ -271,3 +271,158 @@ Important limitation: free-tier availability, regional eligibility and quotas re
 | V-29 | Adopted v3 brief and wrote `docs/REQUIREMENTS.md`, `docs/GAPS.md`, updated `docs/PROJECT_STATE.md` | Registry seeded from SC1-SC12 and K/V/O/W/M/P/L/S; v1 brief archived |
 
 Baseline conclusion: the foundation builds and 182 tests pass, but the companion does not meet SC1-SC12. The first fix must close the trust boundary because the current IPC path can run arbitrary commands and auto-confirm them.
+
+## 15. Safety slice: trust boundary, honest actions, greeting (2026-10-29)
+
+| ID | Command / inspection | Observed result |
+| --- | --- | --- |
+| V-30 | `npm.cmd run verify` from `companion/` | ESLint 0 errors / 0 warnings; TypeScript clean; 21 test files / 201 tests passed; Electron main/preload and Vite renderer built |
+| V-31 | `npm.cmd run test -- --run packages/core/src/security/security.test.ts packages/core/src/tools/tools.test.ts` | 2 files / 27 tests passed after integrating `TrustedIntentGuard` into policy and executor |
+| V-32 | Manual PowerShell probe using `GetForegroundWindow`, `GetWindowThreadProcessId`, `GetWindowText`, `OpenInputDesktop(0, false, 0x0001)` | `{"screenLocked":false,"process":"explorer","title":""}`; probe shape and DllImports work on this machine |
+| V-33 | Source inspection of `apps/desktop/src/main/index.ts` | Safe default permissions; `buildToolContext` supplies environment snapshot; `osTryCommand` no longer auto-confirms; `osConfirmTool` executes only the pending action after owner confirmation; `osRejectTool` added |
+| V-34 | Source inspection of `packages/core/src/os-control/windows.ts` and `tools.ts` | WhatsApp returns `{typed, sent:false, verified:false}` unless observed; risk class 3 + `os.message.send` + confirmation; YouTube HTML scraping removed, official search page opened instead |
+| V-35 | Source inspection of `apps/desktop/src/renderer/App.tsx` | Startup greeting with owner name/time; explicit Start listening; no auto-dictation; confirmation card with Confirm/Cancel; "Stop everything"; "stop" voice command pauses listening |
+| V-36 | Source inspection of `packages/core/src/security/*` | Untrusted/system denial, locked/secure-desktop denial, probe-failure fail-closed, class 3/4 rules, sensitive-target denylist, confirmation hash binding, emergency-stop manager |
+| V-37 | `docs/REQUIREMENTS.md`, `docs/GAPS.md`, `docs/PROJECT_STATE.md` updated | Statuses moved to PARTIAL where only source/unit evidence exists; no row marked PASS except M3 (scraping removed) and pre-existing W8 |
+
+Safety-slice conclusion: the critical trust-boundary defects are closed at the core/unit/IPC-source level, and the full verify gate is green. The slice is not yet proven end-to-end in Electron, and the WhatsApp observation reader, injection corpus, real integrity probe, greeting completeness and media ranking remain open.
+
+## 16. External-content injection boundary (2026-10-29)
+
+| ID | Command / inspection | Observed result |
+| --- | --- | --- |
+| V-38 | `npm.cmd run test -- --run packages/core/src/security/untrusted-content.test.ts packages/core/src/security/security.test.ts` from `companion/` | PASS: 2 files / 22 tests passed. The corpus covers web, email, file, screen, filename, notification and audio text; each is denied for risk classes 1, 2 and 3. |
+| V-39 | `npm.cmd run typecheck` from `companion/` | PASS: TypeScript completed with exit code 0 after adding `routeExternalContent`. |
+| V-40 | Source inspection of `packages/core/src/security/untrusted-content.ts` | PASS: external content receives explicit `untrusted_content` provenance; it cannot produce `owner_ui` or `owner_voice`. |
+
+Remaining limit: this is a core boundary/corpus check. No live screen, audio, notification or file producer has yet been wired to the route, and no Electron E2E has been run.
+
+| V-41 | `npm.cmd run verify` from `companion/` with approved elevated build execution | PASS: ESLint clean, TypeScript clean, 22 test files / 208 tests passed, Electron main/preload and Vite renderer builds completed. |
+| V-42 | `npm.cmd run test -- --run packages/core/src/voice/greeting.test.ts` and `npm.cmd run typecheck` | PASS: greeting composer tests 4/4; TypeScript completed with exit code 0. Coverage includes name, two-sentence limit, variation, pronunciation markup, mute and overnight quiet hours. |
+| V-43 | `npm.cmd run verify` from `companion/` with approved elevated build execution | PASS: ESLint clean, TypeScript clean, 23 test files / 212 tests passed, Electron main/preload and Vite renderer builds completed. |
+| V-44 | `npm.cmd start` from `companion/` with approved desktop execution, then clean Ctrl+C; process check afterward | PASS: encrypted storage opened, credential store available, desktop window created in ~0.9 s, and no Electron process remained after stop. Startup smoke only; not GUI feature E2E. |
+| V-45 | `npm.cmd run verify` from `companion/` with approved elevated build execution | PASS: ESLint clean, TypeScript clean, 30 test files / 228 tests passed, Electron main/preload and Vite renderer builds completed. |
+| V-46 | Direct `node --experimental-strip-types` invocation of `windows.ts` speech smoke | NOT RUN: Node native TS stripping could not resolve this repository's `.js` specifier to `.ts`; no audio result is claimed. Electron startup path was exercised separately. |
+| V-47 | Bundled `spikes/runtime-smoke.ts` with project esbuild, then executed the bundle outside the sandbox | PASS: actual `speakText` returned `spoken:true`; actual `openTarget('calculator')` returned `opened:true, resolved:"calc"`. This covers one speech path and one launcher, not general UI automation. |
+| V-48 | `npm.cmd run verify` from `companion/` with approved elevated build execution | PASS: ESLint clean, TypeScript clean, 30 test files / 229 tests passed, Electron main/preload and Vite renderer builds completed. |
+| V-49 | `npm.cmd run verify` from `companion/` with approved elevated build execution | PASS: ESLint clean, TypeScript clean, 31 test files / 231 tests passed, Electron main/preload and Vite renderer builds completed after emergency-stop and decision-orchestration changes. |
+| V-50 | Bundled `spikes/runtime-smoke.ts` with project esbuild, then executed it after process-observation changes | PASS: actual speech returned `spoken:true`; Calculator launch returned `opened:true,resolved:"calc"` only after `CalculatorApp.exe` was observed; exact test process was cleaned up. |
+| V-51 | `npm.cmd run verify` from `companion/` with approved elevated build execution | PASS: ESLint clean, TypeScript clean, 31 test files / 231 tests passed, Electron main/preload and Vite renderer builds completed after process postcondition changes. |
+| V-52 | `npm.cmd start` with live marker inspection of `%APPDATA%\\Companion\\heartbeat.json`, then external Ctrl+C and process check | PASS: heartbeat contained the live Electron PID/timestamp while running; Electron stopped and no process remained. No stop marker was written because Ctrl+C is an external termination, which is intentionally not treated as owner Stop. |
+| V-53 | Disposable `spikes/uia-probe.ps1` against a newly launched Notepad process; exact test PID closed afterward | PASS: Windows UI Automation returned a unique Notepad window and 106 descendant elements with control types/pattern availability. User document text/titles were not recorded. An unrelated pre-existing Notepad process was not touched. |
+
+## 17. Capability and learning-gap follow-up (2026-10-29)
+
+| ID | Command / inspection | Observed result |
+| --- | --- | --- |
+| V-54 | `npm.cmd run test -- --run packages/core/src/memory/memory.test.ts packages/core/src/os-control/capability-store.test.ts` from `companion/` | PASS: 2 files / 6 tests passed. Rejected memory lookup is normalized and repository-backed; capability success rates retain explicit observation counts. |
+| V-55 | `npm.cmd run verify` from `companion/` with approved elevated build execution | PASS: ESLint 0 errors / 0 warnings, TypeScript clean, 33 test files / 234 tests passed, Electron main/preload and Vite renderer production builds completed. |
+
+These results do not close the owner-gated voice-model, vision, real-messaging or elevated-control checks, and do not establish GUI end-to-end coverage or production readiness.
+
+| V-56 | Bundled `spikes/runtime-smoke.ts` with project esbuild, executed it, and checked `Get-Process CalculatorApp` afterward | PASS: actual speech returned `spoken:true`; Calculator returned `opened:true,resolved:"calc"`; the smoke fixture cleaned up its newly-created Calculator process and no CalculatorApp process remained. |
+
+## 18. Proposal-only desktop learning boundary (2026-10-29)
+
+| ID | Command / inspection | Observed result |
+| --- | --- | --- |
+| V-57 | `npm.cmd run test -- --run packages/core/src/memory/memory.test.ts apps/desktop/src/main/learning-policy.test.ts` from `companion/` | PASS: 2 files / 7 tests passed. Conversation recording can be disabled, and the desktop IPC path contains no provider-derived automatic profile mutation after a response. |
+| V-58 | `npm.cmd run verify` from `companion/` with approved elevated build execution | PASS: ESLint 0 errors / 0 warnings, TypeScript clean, 34 test files / 236 tests passed, Electron main/preload and Vite renderer production builds completed. |
+
+L5 is now PASS for the default desktop path. This does not mean conversation data is never stored: normal chat history remains local conversation data, and explicit owner-approved learning is still a separate unfinished workflow.
+
+## 19. Live typed cognition and provider failure follow-up (2026-10-29)
+
+| ID | Command / inspection | Observed result |
+| --- | --- | --- |
+| V-59 | `npm.cmd run test -- --run packages/core/src/conversation/engine.test.ts packages/core/src/cognition/decision-orchestrator.test.ts` from `companion/` | PASS: 2 files / 14 tests passed. Configured conversation engines produce speech from validated TurnDecision output; JSON mode is requested, one repair is bounded, and a throwing provider fails over to the next source. |
+| V-60 | `npm.cmd run verify` from `companion/` with approved elevated build execution | PASS: ESLint 0 errors / 0 warnings, TypeScript clean, 34 test files / 238 tests passed, Electron main/preload and Vite renderer production builds completed. |
+
+The live cognition path still does not execute plans: proposals must continue through the existing deterministic policy/executor path, and persona regression/provider-switch persistence remain open.
+
+| V-61 | `npm.cmd start` with live heartbeat inspection, then external Ctrl+C, process and marker check | PASS: encrypted storage opened, credential store was available, the desktop window was created, a heartbeat recorded a live Electron PID/timestamp, and after external termination no matching companion Electron process or crash marker remained. No stop marker was expected because termination was external. |
+
+## 20. Persona regression suite (2026-10-29)
+
+| ID | Command / inspection | Observed result |
+| --- | --- | --- |
+| V-62 | `npm.cmd run test -- --run packages/core/src/cognition/persona-suite.test.ts` and `npm.cmd run verify` from `companion/` | PASS: the suite replayed 30 fixed prompts across three provider-output profiles (90 cases) and met its >=95% normalized-output rule threshold; the full gate passed with 35 files / 239 tests, clean lint/typecheck and both builds. |
+
+This is a deterministic provider-profile regression suite, not a claim that three live hosted providers or the owner’s final persona have been validated.
+
+## 21. Persisted startup control (2026-10-29)
+
+| ID | Command / inspection | Observed result |
+| --- | --- | --- |
+| V-63 | `npm.cmd run verify` from `companion/` with approved elevated build execution; source inspection of startup IPC/tray path | PASS: 35 test files / 239 tests, lint/typecheck/build clean. Startup preference is stored under the local settings table, applied per-user through Electron login-item settings, and exposed through owner-authenticated IPC plus tray enable/disable actions; default remains disabled. |
+
+The OS startup setting has not yet been verified across a reboot or Task Manager disable transition, so SC5 remains PARTIAL.
+
+## 22. Windows installer artifact (2026-10-29)
+
+| ID | Command / inspection | Observed result |
+| --- | --- | --- |
+| V-64 | `npm.cmd run package` from `companion/`; `Get-ChildItem apps/desktop/release`; `Get-FileHash .../Companion-0.1.0-x64.exe -Algorithm SHA256`; `Get-AuthenticodeSignature .../Companion-0.1.0-x64.exe` | PASS: NSIS packaging completed and produced `Companion-0.1.0-x64.exe` (122,715,309 bytes), blockmap and unpacked app including `dist/main/supervisor.js`. SHA-256: `DC57EBE6EB0C26F2E925F481F0C56DDEBC24D816005D6D0C0BCD1E79E20D45B5`. Authenticode status was `NotSigned`, as expected without G4 signing approval. |
+
+The installer was not executed or installed on a clean machine; this is packaging evidence only.
+
+## 23. Packaged runtime smoke (2026-10-29)
+
+| ID | Command / inspection | Observed result |
+| --- | --- | --- |
+| V-65 | Launch generated `apps/desktop/release/win-unpacked/Companion.exe`, inspect `%APPDATA%\\Companion\\heartbeat.json` and exact executable path, then `taskkill /PID <launched PID> /T /F` | PASS: packaged runtime started, created the expected Electron process tree, wrote a heartbeat with the launched PID/timestamp, and no matching packaged process remained after terminating the exact test tree. This was not an installer/clean-machine test. |
+
+## 24. Reusable UI Automation service (2026-10-29)
+
+| ID | Command / inspection | Observed result |
+| --- | --- | --- |
+| V-66 | `npm.cmd run test -- --run packages/core/src/os-control/uia.test.ts`; bundled `spikes/uia-service-smoke.ts` with project esbuild and executed it; checked Notepad processes afterward | PASS: validation tests passed; the real service returned aggregate metadata for a Notepad window with 39 descendants/controls; the pre-existing Notepad PID remained untouched and no disposable test process remained. A first PID-only attempt failed closed with `target_window_not_found`, which is recorded as the expected safety behavior for a missing target window. |
+| V-67 | `npm.cmd run verify` from `companion/` with approved elevated build execution | PASS: ESLint 0 errors / 0 warnings, TypeScript clean, 36 test files / 240 tests passed, Electron main/preload and Vite renderer production builds completed. |
+
+The service is not yet integrated into typed app adapters or a 10-task benchmark, so O4 and SC3 remain PARTIAL.
+
+## 27. Durable capability-store follow-up (2026-10-29)
+
+| ID | Command / inspection | Observed result |
+| --- | --- | --- |
+| V-70 | `npm.cmd run test -- --run packages/core/src/os-control/capability-store.test.ts packages/core/src/os-control/uia.test.ts`; `npm.cmd run verify` from `companion/` | PASS: capability and UIA focused tests passed (3/3); the durable key-value-backed capability store round-tripped app/version data and the full gate passed with 37 files / 243 tests, clean lint/typecheck and both builds. |
+
+The durable adapter is ready to connect to encrypted settings, but no production app adapter currently records live capability observations automatically.
+
+## 28. Policy-bundle integrity (2026-10-29)
+
+| ID | Command / inspection | Observed result |
+| --- | --- | --- |
+| V-71 | `npm.cmd run test -- --run packages/core/src/security/policy-bundle.test.ts packages/core/src/tools/tools.test.ts`; `npm.cmd run verify` from `companion/` | PASS: policy-bundle and tool-policy focused tests passed (15/15); the frozen built-in bundle verifies its SHA-256 invariants, tampered Class 4 policy is rejected, and the full gate passed with 38 files / 245 tests. |
+
+Learning cannot mutate the policy bundle because it is frozen and policy evaluation verifies it before authorization.
+
+## 29. Companion canary scan (2026-10-29)
+
+| ID | Command / inspection | Observed result |
+| --- | --- | --- |
+| V-72 | `powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\\spikes\\secret-canary-scan.ps1` from the repository root | PASS: scanned 4 selected companion/docs/spikes roots across 8 text extensions and found 0 high-confidence API-key/private-key patterns. Legacy secrets/config stores and generated dependencies were intentionally excluded. |
+
+The scan is evidence for the companion source scope, not a claim about excluded legacy data or all generated/dependency content.
+
+## 30. Clipboard restoration helper (2026-10-29)
+
+| ID | Command / inspection | Observed result |
+| --- | --- | --- |
+| V-73 | `npm.cmd run verify` from `companion/` | PASS: ESLint clean, TypeScript clean, 39 test files / 248 tests passed, Electron main/preload, supervisor and Vite renderer builds completed. Clipboard helper tests prove restore on success and exception. |
+
+The helper is not yet used by a paste-driven UIA adapter; no clipboard contents were accessed during tests beyond an in-memory fake.
+
+## 25. Detached supervisor fixture (2026-10-29)
+
+| ID | Command / inspection | Observed result |
+| --- | --- | --- |
+| V-68 | Bundled `spikes/supervisor-smoke.ts` with project esbuild and executed it; fixture uses a temporary directory, a disposable Node child and a separate Node restart command | PASS: the supervisor detected the fixture crash marker, spawned exactly the configured restart executable, observed the bounded restart marker, and cleaned the temporary directory and fixture child. Unit policy tests cover owner stop/external termination exit, live-hang restart and the three-restart cap. |
+
+This proves the supervisor logic and fixture restart path, not a real crashed Electron process or sleep/resume cycle; SC5 remains PARTIAL.
+
+## 26. Packaged supervisor external-termination smoke (2026-10-29)
+
+| ID | Command / inspection | Observed result |
+| --- | --- | --- |
+| V-69 | Launch rebuilt `apps/desktop/release/win-unpacked/Companion.exe`, inspect its exact process tree and heartbeat, terminate the exact root PID externally, wait three seconds, and inspect the exact packaged executable path | PASS: packaged runtime created its Electron process tree and heartbeat; after external termination no matching packaged process remained and it was not restarted. This proves the external-termination branch, not a real crash/hang restart. |

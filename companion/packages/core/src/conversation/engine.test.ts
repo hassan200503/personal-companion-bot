@@ -136,4 +136,21 @@ describe('DefaultConversationEngine', () => {
     expect(called).toBe(true);
   });
 
+  it('uses the typed cognition contract when configured', async () => {
+    const typed = JSON.stringify({ schemaVersion: '1', turnId: 't1', intent: { type: 'none', confidence: 1 }, understanding: 'A greeting.', plan: [], speech: { text: 'Typed reply.', tone: 'plain' }, memoryCandidates: [], riskAssessment: { proposedRiskClass: 1, reasons: [] }, followUps: [] });
+    const typedProvider = new MockProvider({ responseContent: typed });
+    const typedRouter = new ProviderRouter({ maxRetries: 1 });
+    typedRouter.register(typedProvider, 10, 'typed-model');
+    const e = new DefaultConversationEngine({
+      router: typedRouter,
+      defaultModel: 'fallback-model',
+      cognition: { self: { identity: 'Companion', style: 'concise', policy: 'Never execute model plans directly.' } },
+    });
+    const conv = e.createConversation();
+    const reply = await e.sendMessage(conv.id, 'Hello', new AbortController().signal);
+    expect(reply.content).toBe('Typed reply.');
+    expect(reply.providerId).toBe('mock-provider');
+    expect(typedProvider.getCompleteCalls()[0]?.jsonMode).toBe(true);
+  });
+
 });

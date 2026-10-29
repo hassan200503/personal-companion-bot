@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import type { ToolDefinition } from './contracts.js';
+import { evaluateLearningCandidate } from '../memory/learning-policy.js';
 
 export function createMemorySearchTool(): ToolDefinition<{ query: string; limit?: number }, { results: unknown[] }> {
   return {
@@ -25,7 +26,7 @@ export function createMemorySearchTool(): ToolDefinition<{ query: string; limit?
   };
 }
 
-export function createMemoryProposeTool(): ToolDefinition<{ category: string; content: string; origin?: 'explicit' | 'inferred' | 'imported' }, { id: string }> {
+export function createMemoryProposeTool(): ToolDefinition<{ category: string; content: string; origin?: 'explicit' | 'inferred' | 'imported'; observations?: number; spanDays?: number; thirdPartyContent?: boolean }, { id: string }> {
   return {
     name: 'memory.propose',
     version: '1.0.0',
@@ -34,6 +35,9 @@ export function createMemoryProposeTool(): ToolDefinition<{ category: string; co
       category: z.string().min(1),
       content: z.string().min(1),
       origin: z.enum(['explicit', 'inferred', 'imported']).optional(),
+      observations: z.number().int().nonnegative().optional(),
+      spanDays: z.number().nonnegative().optional(),
+      thirdPartyContent: z.boolean().optional(),
     }),
     outputSchema: z.object({ id: z.string() }),
     requiredPermissions: ['memory.write'],
@@ -47,6 +51,19 @@ export function createMemoryProposeTool(): ToolDefinition<{ category: string; co
     execute: async (ctx, input) => {
       const repo = ctx.memoryRepository;
       if (!repo) throw new Error('memory repository unavailable');
+      const origin = input.origin ?? 'explicit';
+      const previouslyRejected = repo.list({ approval: 'rejected', category: input.category }).some((memory) => memory.content === input.content);
+      const learning = evaluateLearningCandidate({
+        category: input.category,
+        content: input.content,
+        origin,
+        evidence: {
+          observations: input.observations ?? (origin === 'explicit' ? 1 : 0),
+          spanDays: input.spanDays ?? 0,
+          thirdPartyContent: input.thirdPartyContent
+        }
+      }, previouslyRejected);
+      if (!learning.allowed) throw new Error(`learning_policy_denied:${learning.reason}`);
       const { randomUUID } = await import('node:crypto');
       const now = ctx.now().toISOString();
       const memory = {
@@ -54,9 +71,9 @@ export function createMemoryProposeTool(): ToolDefinition<{ category: string; co
         category: input.category,
         content: input.content,
         payload: {},
-        origin: input.origin ?? 'explicit',
-        confidence: 1,
-        sensitivity: 'normal' as const,
+        origin,
+        confidence: origin === 'explicit' ? 1 : Math.min(0.99, (input.observations ?? 0) / 3),
+        sensitivity: learning.sensitivity,
         approval: 'proposed' as const,
         retentionPolicy: 'owner-managed',
         createdAt: now,

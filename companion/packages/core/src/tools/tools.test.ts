@@ -60,7 +60,7 @@ describe('tool registry and executor', () => {
 });
 
 describe('policy hardening', () => {
-  it('untrusted input elevates confirmation for class 2 tool', async () => {
+  it('untrusted input never grants intent for a class 2 tool', async () => {
     const { DefaultToolRegistry } = await import('./registry.js');
     const { DefaultPolicyEngine } = await import('./policy.js');
     const reg = new DefaultToolRegistry();
@@ -87,7 +87,124 @@ describe('policy hardening', () => {
     const t = reg.get('mem.propose2')!;
     const ctx: Omit<ToolExecutionContext, 'audit' | 'confirmation'> = { signal: new AbortController().signal, platform: process.platform, permissions: new Set(), now: () => new Date() };
     const decision = engine.evaluate({ toolName: 'mem.propose2', input: { x: 'y' }, trust: 'untrusted' }, t, { ...ctx, audit: { record() {}, list() { return []; } }, confirmation: conf });
-    expect(decision.requiresConfirmation).toBe(true);
+    expect(decision.allowed).toBe(false);
+    expect(decision.reason).toBe('untrusted_content_cannot_grant_intent');
+  });
+
+  it('denies a class 1 tool while the screen is locked', async () => {
+    const { DefaultToolRegistry } = await import('./registry.js');
+    const { DefaultPolicyEngine } = await import('./policy.js');
+    const reg = new DefaultToolRegistry();
+    const tool: ToolDefinition<unknown, unknown> = {
+      name: 'open.safe',
+      version: '1.0.0',
+      description: 'open',
+      inputSchema: (await import('zod')).z.object({ target: (await import('zod')).z.string() }),
+      outputSchema: (await import('zod')).z.object({ ok: (await import('zod')).z.boolean() }),
+      requiredPermissions: [],
+      dataClassification: 'personal',
+      riskClass: 1,
+      reversible: true,
+      timeoutMs: 1000,
+      cancellable: false,
+      audit: 'metadata',
+      platforms: ['all'],
+      execute: async () => ({ ok: true }),
+    };
+    reg.register(tool);
+    const { InMemoryConfirmationManager } = await import('./confirmation.js');
+    const conf = new InMemoryConfirmationManager();
+    const engine = new DefaultPolicyEngine();
+    const t = reg.get('open.safe')!;
+    const ctx: ToolExecutionContext = {
+      signal: new AbortController().signal,
+      platform: process.platform,
+      permissions: new Set(),
+      audit: { record() {}, list() { return []; } },
+      confirmation: conf,
+      now: () => new Date(),
+      environment: { screenLocked: true, secureDesktop: false }
+    };
+    const decision = engine.evaluate({ toolName: 'open.safe', input: { target: 'notepad' }, trust: 'trusted' }, t, ctx);
+    expect(decision.allowed).toBe(false);
+    expect(decision.reason).toBe('screen_locked');
+  });
+
+  it('denies a tool targeting a password manager', async () => {
+    const { DefaultToolRegistry } = await import('./registry.js');
+    const { DefaultPolicyEngine } = await import('./policy.js');
+    const reg = new DefaultToolRegistry();
+    const tool: ToolDefinition<unknown, unknown> = {
+      name: 'open.any',
+      version: '1.0.0',
+      description: 'open',
+      inputSchema: (await import('zod')).z.object({ target: (await import('zod')).z.string() }),
+      outputSchema: (await import('zod')).z.object({ ok: (await import('zod')).z.boolean() }),
+      requiredPermissions: [],
+      dataClassification: 'personal',
+      riskClass: 2,
+      reversible: true,
+      timeoutMs: 1000,
+      cancellable: false,
+      audit: 'metadata',
+      platforms: ['all'],
+      execute: async () => ({ ok: true }),
+    };
+    reg.register(tool);
+    const { InMemoryConfirmationManager } = await import('./confirmation.js');
+    const conf = new InMemoryConfirmationManager();
+    const engine = new DefaultPolicyEngine();
+    const t = reg.get('open.any')!;
+    const ctx: ToolExecutionContext = {
+      signal: new AbortController().signal,
+      platform: process.platform,
+      permissions: new Set(),
+      audit: { record() {}, list() { return []; } },
+      confirmation: conf,
+      now: () => new Date(),
+      environment: { screenLocked: false, secureDesktop: false }
+    };
+    const decision = engine.evaluate({ toolName: 'open.any', input: { target: 'KeePassXC' }, trust: 'trusted' }, t, ctx);
+    expect(decision.allowed).toBe(false);
+    expect(decision.reason).toBe('sensitive_target');
+  });
+
+  it('fails closed when a class 2 OS tool has no environment snapshot', async () => {
+    const { DefaultToolRegistry } = await import('./registry.js');
+    const { DefaultPolicyEngine } = await import('./policy.js');
+    const reg = new DefaultToolRegistry();
+    const tool: ToolDefinition<unknown, unknown> = {
+      name: 'os.open',
+      version: '1.0.0',
+      description: 'open',
+      inputSchema: (await import('zod')).z.object({ target: (await import('zod')).z.string() }),
+      outputSchema: (await import('zod')).z.object({ ok: (await import('zod')).z.boolean() }),
+      requiredPermissions: [],
+      dataClassification: 'personal',
+      riskClass: 2,
+      reversible: true,
+      timeoutMs: 1000,
+      cancellable: false,
+      audit: 'metadata',
+      platforms: ['all'],
+      execute: async () => ({ ok: true }),
+    };
+    reg.register(tool);
+    const { InMemoryConfirmationManager } = await import('./confirmation.js');
+    const conf = new InMemoryConfirmationManager();
+    const engine = new DefaultPolicyEngine();
+    const t = reg.get('os.open')!;
+    const ctx: ToolExecutionContext = {
+      signal: new AbortController().signal,
+      platform: process.platform,
+      permissions: new Set(),
+      audit: { record() {}, list() { return []; } },
+      confirmation: conf,
+      now: () => new Date()
+    };
+    const decision = engine.evaluate({ toolName: 'os.open', input: { target: 'notepad' }, trust: 'trusted' }, t, ctx);
+    expect(decision.allowed).toBe(false);
+    expect(decision.reason).toBe('security_probe_failed');
   });
 });
 
@@ -172,6 +289,7 @@ describe('tool executor more', () => {
       audit,
       confirmation: conf,
       now: () => new Date(),
+      environment: { screenLocked: false, secureDesktop: false }
     };
     const first = await exec.execute({ toolName: 'fake.send', input: { msg: 'hi' }, trust: 'trusted' }, ctx);
     expect(first.status).toBe('needs_confirmation');
@@ -183,10 +301,70 @@ describe('tool executor more', () => {
     expect(third.status).toBe('duplicate');
   });
 
+  it('rejects a confirmation hash that was issued for different input', async () => {
+    const reg = new DefaultToolRegistry();
+    const tool = {
+      name: 'fake.send',
+      version: '1.0.0',
+      description: 'send',
+      inputSchema: z.object({ msg: z.string() }),
+      outputSchema: z.object({ ok: z.boolean() }),
+      requiredPermissions: ['send'],
+      dataClassification: 'personal' as const,
+      riskClass: 3 as const,
+      reversible: false,
+      timeoutMs: 1000,
+      cancellable: false,
+      audit: 'metadata' as const,
+      platforms: ['all'] as const,
+      execute: async () => ({ ok: true }),
+    };
+    reg.register(tool as unknown as ToolDefinition<unknown, unknown>);
+    const audit = new InMemoryAuditLogger();
+    const conf = new InMemoryConfirmationManager();
+    const exec = new DefaultToolExecutor(reg, new DefaultPolicyEngine(), conf);
+    const ctx: ToolExecutionContext = {
+      signal: new AbortController().signal,
+      platform: process.platform,
+      permissions: new Set(['send']),
+      audit,
+      confirmation: conf,
+      now: () => new Date(),
+      environment: { screenLocked: false, secureDesktop: false }
+    };
+    const first = await exec.execute({ toolName: 'fake.send', input: { msg: 'hi' }, trust: 'trusted' }, ctx);
+    const hash = first.actionHash!;
+    expect(conf.confirm(hash)).toBe(true);
+    const swapped = await exec.execute(
+      { toolName: 'fake.send', input: { msg: 'different' }, trust: 'trusted', confirmationHash: hash },
+      ctx
+    );
+    expect(swapped.status).toBe('denied');
+    expect(swapped.error).toBe('confirmation_mismatch');
+  });
+
   it('audit logger persists to sqlite', () => {
     const audit = new SqliteAuditLogger(db.raw);
     audit.record({ action: 'tool:x', outcome: 'completed', createdAt: new Date().toISOString() });
     expect(audit.list().length).toBe(1);
+  });
+
+  it('does not report completion when a declared postcondition is false', async () => {
+    const reg = new DefaultToolRegistry();
+    const tool = {
+      name: 'fake.observed', version: '1.0.0', description: 'observed', inputSchema: z.object({}), outputSchema: z.object({ ok: z.boolean() }),
+      requiredPermissions: [], dataClassification: 'personal' as const, riskClass: 1 as const, reversible: true, timeoutMs: 1000,
+      cancellable: false, audit: 'metadata' as const, platforms: ['all'] as const, execute: async () => ({ ok: true }), postcondition: async () => false
+    } as unknown as ToolDefinition<unknown, unknown>;
+    reg.register(tool);
+    const conf = new InMemoryConfirmationManager();
+    const exec = new DefaultToolExecutor(reg, new DefaultPolicyEngine(), conf);
+    const result = await exec.execute({ toolName: 'fake.observed', input: {}, trust: 'trusted' }, {
+      signal: new AbortController().signal, platform: process.platform, permissions: new Set(), audit: new InMemoryAuditLogger(), confirmation: conf, now: () => new Date(),
+      environment: { screenLocked: false, secureDesktop: false }
+    });
+    expect(result.status).toBe('failed');
+    expect(result.error).toBe('postcondition_unverified');
   });
 });
 

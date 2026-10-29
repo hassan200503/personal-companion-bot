@@ -9,6 +9,22 @@ import type {
 } from './contracts.js';
 import { DefaultPolicyEngine } from './policy.js';
 
+function canonicalJson(value: unknown): string {
+  if (value === null || value === undefined) return 'null';
+  if (typeof value === 'number' || typeof value === 'boolean' || typeof value === 'string') {
+    return JSON.stringify(value);
+  }
+  if (Array.isArray(value)) {
+    return `[${value.map(canonicalJson).join(',')}]`;
+  }
+  if (typeof value === 'object') {
+    const record = value as Record<string, unknown>;
+    const keys = Object.keys(record).sort();
+    return `{${keys.map((key) => `${JSON.stringify(key)}:${canonicalJson(record[key])}`).join(',')}}`;
+  }
+  return JSON.stringify(String(value));
+}
+
 export class DefaultToolExecutor implements ToolExecutor {
   constructor(
     private readonly registry: ToolRegistry,
@@ -38,6 +54,18 @@ export class DefaultToolExecutor implements ToolExecutor {
           ctx.audit.record({ action: `tool:${tool.name}`, outcome: 'duplicate', detail: { actionHash: request.confirmationHash }, createdAt: ctx.now().toISOString() });
           return { status: 'duplicate', error: 'duplicate_action', actionHash: request.confirmationHash };
         }
+        if (!pending) {
+          ctx.audit.record({ action: `tool:${tool.name}`, outcome: 'denied', detail: { reason: 'confirmation_not_valid' }, createdAt: ctx.now().toISOString() });
+          return { status: 'denied', error: 'confirmation_not_valid', actionHash: request.confirmationHash };
+        }
+        if (
+          pending.toolName !== tool.name ||
+          pending.toolVersion !== tool.version ||
+          canonicalJson(pending.input) !== canonicalJson(request.input)
+        ) {
+          ctx.audit.record({ action: `tool:${tool.name}`, outcome: 'denied', detail: { reason: 'confirmation_mismatch' }, createdAt: ctx.now().toISOString() });
+          return { status: 'denied', error: 'confirmation_mismatch', actionHash: request.confirmationHash };
+        }
         if (!this.confirmation.isConfirmed(request.confirmationHash)) {
           ctx.audit.record({ action: `tool:${tool.name}`, outcome: 'denied', detail: { reason: 'confirmation_not_valid' }, createdAt: ctx.now().toISOString() });
           return { status: 'denied', error: 'confirmation_not_valid', actionHash: request.confirmationHash };
@@ -61,6 +89,9 @@ export class DefaultToolExecutor implements ToolExecutor {
       const outParsed = tool.outputSchema.safeParse(result);
       if (!outParsed.success) {
         throw new Error('invalid_output');
+      }
+      if (tool.postcondition && !(await tool.postcondition(ctx, request.input as never, result as never))) {
+        throw new Error('postcondition_unverified');
       }
       ctx.audit.record({ action: `tool:${tool.name}`, outcome: 'completed', detail: { audit: tool.audit }, createdAt: ctx.now().toISOString() });
       return { status: 'completed', result };

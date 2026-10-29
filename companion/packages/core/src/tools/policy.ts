@@ -6,9 +6,37 @@ import type {
   ToolExecutionContext,
   ToolPolicyDecision,
 } from './contracts.js';
+import { TrustedIntentGuard, type EnvironmentSnapshot, type SensitiveTarget } from '../security/index.js';
+import { verifyPolicyBundle } from '../security/policy-bundle.js';
+
+function targetFromInput(input: unknown, environment?: EnvironmentSnapshot): SensitiveTarget {
+  const record = input !== null && typeof input === 'object' ? (input as Record<string, unknown>) : {};
+  const firstString = (keys: string[]): string | undefined => {
+    for (const key of keys) {
+      const value = record[key];
+      if (typeof value === 'string' && value.trim()) return value;
+    }
+    return undefined;
+  };
+
+  return {
+    processName: environment?.foregroundProcess,
+    windowTitle: environment?.foregroundTitle,
+    target: firstString(['target', 'url', 'contact', 'number', 'command', 'app', 'path']),
+  };
+}
 
 export class DefaultPolicyEngine implements PolicyEngine {
+  private readonly guard: TrustedIntentGuard;
+
+  constructor(guard: TrustedIntentGuard = new TrustedIntentGuard()) {
+    this.guard = guard;
+  }
+
   evaluate(request: ToolCallRequest, tool: ToolDefinition<unknown, unknown>, ctx: ToolExecutionContext): ToolPolicyDecision {
+    if (!verifyPolicyBundle()) {
+      return { allowed: false, requiresConfirmation: false, reason: 'policy_bundle_integrity_failed' };
+    }
     // Class 4 restricted: blocked in code
     if (tool.riskClass === 4) {
       return { allowed: false, requiresConfirmation: false, reason: 'restricted_tool_blocked' };
@@ -54,11 +82,32 @@ export class DefaultPolicyEngine implements PolicyEngine {
       }
     }
 
-    // confirmation determination
-    let requiresConfirmation = tool.requiresConfirmation ?? tool.riskClass >= 3;
-    if (request.trust === 'untrusted' && tool.riskClass >= 2) {
-      requiresConfirmation = true;
+    const source =
+      request.intentSource ??
+      (request.trust === 'untrusted' ? 'untrusted_content' : 'owner_ui');
+    const environment = ctx.environment ?? (tool.name.startsWith('os.')
+      ? { screenLocked: true, secureDesktop: true, probeFailed: true }
+      : { screenLocked: false, secureDesktop: false });
+    const authorization = this.guard.authorize({
+      source,
+      riskClass: tool.riskClass,
+      environment,
+      target: targetFromInput(request.input, environment),
+    });
+
+    if (!authorization.allowed) {
+      return {
+        allowed: false,
+        requiresConfirmation: false,
+        reason: authorization.reason ?? 'intent_denied',
+      };
     }
+
+    // Every class 3 action needs confirmation, regardless of the tool's default.
+    const requiresConfirmation =
+      authorization.requiresConfirmation ||
+      tool.requiresConfirmation === true ||
+      tool.riskClass >= 3;
 
     // action hash for confirmation binding
     const actionHash = createHash('sha256')
@@ -71,4 +120,3 @@ export class DefaultPolicyEngine implements PolicyEngine {
     return { allowed: true, requiresConfirmation, actionHash };
   }
 }
-

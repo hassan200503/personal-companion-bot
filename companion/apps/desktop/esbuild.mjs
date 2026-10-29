@@ -26,6 +26,12 @@ await build({
 
 await build({
   ...shared,
+  entryPoints: [resolve(appDir, "src/main/supervisor.ts")],
+  outfile: resolve(distDir, "main/supervisor.js")
+});
+
+await build({
+  ...shared,
   entryPoints: [resolve(appDir, "src/preload/index.ts")],
   outfile: resolve(distDir, "preload/index.js")
 });

@@ -14,11 +14,12 @@ export interface RecordMemoryInput {
 
 export function createMemoryRecorder(
   repo: MemoryRepository,
-  options: { idFactory?: () => string; now?: () => Date } = {}
+  options: { idFactory?: () => string; now?: () => Date; recordConversation?: boolean } = {}
 ): (input: RecordMemoryInput | string, assistant?: string) => Promise<void> {
   const idFactory = options.idFactory ?? (() => randomUUID());
   const now = options.now ?? (() => new Date());
   return async (input, assistant) => {
+    if (typeof input === 'string' && options.recordConversation === false) return;
     const nowIso = now().toISOString();
     const content = typeof input === 'string' ? (assistant ? `${input}\n${assistant}` : input) : input.content;
     // For conversation recorder usage: store a proposed memory of the exchange

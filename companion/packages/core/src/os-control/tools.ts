@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import type { ToolDefinition } from '../tools/contracts.js';
 import { openTarget, playMedia, speakText, makeCall, runCommand, takeScreenshot, takePhoto, recordVideo, sendWhatsAppMessage } from './windows.js';
+import { normalizeSpeech } from '../cognition/style-normalizer.js';
 
 export function createOsOpenTool(): ToolDefinition<{ target: string }, { opened: boolean }> {
   return {
@@ -24,13 +25,13 @@ export function createOsOpenTool(): ToolDefinition<{ target: string }, { opened:
   };
 }
 
-export function createOsPlayTool(): ToolDefinition<{ target: string }, { played: boolean }> {
+export function createOsPlayTool(): ToolDefinition<{ target: string }, { played: boolean; resolved?: string; error?: string; candidates?: string[] }> {
   return {
     name: 'os.play',
     version: '1.0.0',
-    description: 'Play a media file or URL using the default media player.',
+    description: 'Play a media file or URL using the default media player. If no local file exists, opens the official search page without scraping.',
     inputSchema: z.object({ target: z.string().min(1) }),
-    outputSchema: z.object({ played: z.boolean() }),
+    outputSchema: z.object({ played: z.boolean(), resolved: z.string().optional(), error: z.string().optional(), candidates: z.array(z.string()).optional() }),
     requiredPermissions: ['os.media'],
     dataClassification: 'personal',
     riskClass: 2,
@@ -40,8 +41,7 @@ export function createOsPlayTool(): ToolDefinition<{ target: string }, { played:
     audit: 'metadata',
     platforms: ['all'],
     execute: async (_ctx, input) => {
-      const r = await playMedia(input.target);
-      return { played: r.played };
+      return playMedia(input.target);
     },
   };
 }
@@ -62,7 +62,8 @@ export function createOsSpeakTool(): ToolDefinition<{ text: string; voice?: stri
     audit: 'none',
     platforms: ['all'],
     execute: async (_ctx, input) => {
-      const r = await speakText(input.text, input.voice, input.rate);
+      const safeText = normalizeSpeech(input.text, { speakSafe: true, maxSentences: 3 });
+      const r = await speakText(safeText, input.voice, input.rate);
       return { spoken: r.spoken };
     },
   };
@@ -206,24 +207,29 @@ export function createOsVideoTool(): ToolDefinition<{ seconds?: number }, { ok: 
   };
 }
 
-export function createOsWhatsAppTool(): ToolDefinition<{ contact: string; message: string }, { sent: boolean }> {
+export function createOsWhatsAppTool(): ToolDefinition<{ contact: string; message: string }, { typed: boolean; sent: boolean; verified: boolean; error?: string }> {
   return {
     name: 'os.whatsappSend',
-    version: '1.0.0',
-    description: 'Send a WhatsApp message to a contact (phone number or name).',
+    version: '1.1.0',
+    description: 'Open the official WhatsApp app and type a message. Never reports Sent without observing the outgoing message.',
     inputSchema: z.object({ contact: z.string().min(1), message: z.string().min(1) }),
-    outputSchema: z.object({ sent: z.boolean() }),
-    requiredPermissions: ['os.open'],
+    outputSchema: z.object({
+      typed: z.boolean(),
+      sent: z.boolean(),
+      verified: z.boolean(),
+      error: z.string().optional()
+    }),
+    requiredPermissions: ['os.message.send'],
     dataClassification: 'personal',
-    riskClass: 2,
+    riskClass: 3,
     reversible: false,
+    requiresConfirmation: true,
     timeoutMs: 15_000,
     cancellable: true,
-    audit: 'metadata',
+    audit: 'full',
     platforms: ['all'],
     execute: async (_ctx, input) => {
-      const r = await sendWhatsAppMessage(input.contact, input.message);
-      return { sent: r.sent };
+      return sendWhatsAppMessage(input.contact, input.message);
     },
   };
 }

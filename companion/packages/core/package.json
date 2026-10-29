@@ -14,7 +14,9 @@
     "./contracts/provider": "./src/contracts/provider.ts",
     "./storage": "./src/storage/index.ts",
     "./providers": "./src/providers/index.ts",
-    "./conversation": "./src/conversation/index.ts"
+    "./conversation": "./src/conversation/index.ts",
+    "./voice/greeting": "./src/voice/greeting.ts",
+    "./cognition/style-normalizer": "./src/cognition/style-normalizer.ts"
   },
   "dependencies": {
     "better-sqlite3-multiple-ciphers": "13.0.3",

@@ -1,5 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { useEffect, useRef, useState } from 'react';
+import { composeGreeting } from '@companion/core/voice/greeting';
+import { normalizeSpeech } from '@companion/core/cognition/style-normalizer';
 
 type Provider = {
   id: string;
@@ -55,11 +57,14 @@ export default function App() {
   const [auditLogs, setAuditLogs] = useState<any[]>([]);
   const [updateInfo, setUpdateInfo] = useState<any>(null);
   const [muted, setMuted] = useState(false);
+  const [pendingAction, setPendingAction] = useState<{ actionHash: string; toolName: string; input: any } | null>(null);
   const [owner, setOwner] = useState<any>({});
+  const [ownerLoaded, setOwnerLoaded] = useState(false);
   const [speaking, setSpeaking] = useState(false);
   const voiceModeRef = useRef(false);
   const voiceProcessingRef = useRef(false);
   const speakingRef = useRef(false);
+  const greetedRef = useRef(false);
 
   const selected = providers.find((p) => p.id === selectedProvider) || providers[0];
 
@@ -70,10 +75,25 @@ export default function App() {
       setProviders(Array.isArray(p) ? p : []);
       setStored(await window.companion.credentialsList());
       setOnboarding(await window.companion.onboardingGetState());
-      setConversations(await window.companion.chatListConversations());
+      const convs = await window.companion.chatListConversations();
+      if (convs.length === 0) {
+        const c: any = await window.companion.chatCreateConversation('Companion');
+        setConversations([c]);
+        setActiveConv(c.id);
+        setMessages([]);
+      } else {
+        setConversations(convs);
+        setActiveConv(convs[0].id);
+        const c: any = await window.companion.chatGetConversation(convs[0].id);
+        setMessages(Array.isArray(c?.messages) ? c.messages : []);
+      }
       try { setProfile(await window.companion.memoryGetProfile()); } catch { /* ignore */ }
-      try { setVoiceSettings(await window.companion.voiceGetSettings()); } catch { /* ignore */ }
-      try { setOwner(await window.companion.memoryGetOwner()); } catch { /* ignore */ }
+      try {
+        const settings: any = await window.companion.voiceGetSettings();
+        setVoiceSettings(settings);
+        setMuted(settings?.muted === true);
+      } catch { /* ignore */ }
+      try { setOwner(await window.companion.memoryGetOwner()); } catch { /* ignore */ } finally { setOwnerLoaded(true); }
     } catch (e) {
       setError(String(e));
     }
@@ -91,10 +111,16 @@ export default function App() {
         setInterimTranscript(text);
         return;
       }
+      const command = text.toLowerCase().replace(/[.!?,]+$/g, '').trim();
+      if (['stop', 'stop listening', 'pause listening', 'be quiet'].includes(command)) {
+        stopListening();
+        setInterimTranscript('');
+        return;
+      }
       setInterimTranscript('');
       setVoiceState('processing');
       voiceProcessingRef.current = true;
-      void sendMessage(text, true);
+      void sendMessage(text, true, 'owner_voice');
     });
     return () => {
       unsubscribe();
@@ -104,13 +130,40 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    if (activeConv && !voiceModeRef.current && !muted) {
-      startListening();
-    }
     if (muted && voiceModeRef.current) {
       stopListening();
     }
-  }, [activeConv, muted]);
+  }, [muted]);
+
+  useEffect(() => {
+    if (greetedRef.current || !activeConv || !ownerLoaded) return;
+    greetedRef.current = true;
+    const name = typeof owner?.name === 'string' ? owner.name.trim() : '';
+    const greetingResult = composeGreeting({
+      ownerName: name,
+      pronunciation: voiceSettings?.pronunciation,
+      now: new Date(),
+      recentGreetings: voiceSettings?.recentGreetings,
+      quietHours: voiceSettings?.quietHours,
+      muted
+    });
+    const greeting = greetingResult.text;
+    const nextSettings = { ...voiceSettings, recentGreetings: [...(voiceSettings?.recentGreetings ?? []), greeting].slice(-10) };
+    setVoiceSettings(nextSettings);
+    void window.companion.voiceSetSettings(nextSettings);
+    setMessages((prev) => prev.length === 0
+      ? [{ id: crypto.randomUUID(), role: 'assistant', content: greeting, createdAt: new Date().toISOString() }]
+      : prev);
+    if (!muted) void speakReply(greeting);
+  }, [activeConv, owner?.name, ownerLoaded]);
+
+  async function toggleMute(): Promise<void> {
+    const next = !muted;
+    setMuted(next);
+    const nextSettings = { ...voiceSettings, muted: next };
+    setVoiceSettings(nextSettings);
+    await window.companion.voiceSetSettings(nextSettings);
+  }
 
   async function runOnboarding() {
     setBusy(true);
@@ -258,39 +311,77 @@ export default function App() {
 
   async function speakReply(content: string): Promise<void> {
     if (muted) return;
-    if (!content.trim()) return;
+    const safeContent = normalizeSpeech(content, { speakSafe: true, maxSentences: 3 });
+    if (!safeContent.trim()) return;
+    const resumeListening = voiceModeRef.current;
+    if (resumeListening) {
+      voiceModeRef.current = false;
+      await window.companion.voiceStop();
+      setVoiceState('off');
+    }
     speakingRef.current = true;
     setSpeaking(true);
     setVoiceState('processing');
     try {
-      await window.companion.osTryCommand(`speak ${content}`);
+      await window.companion.osTryCommand(`speak ${safeContent}`);
     } catch {
       setVoiceError('Voice output failed. Check that Windows has an installed speech voice.');
     } finally {
       speakingRef.current = false;
       setSpeaking(false);
-      if (voiceModeRef.current) {
+      if (resumeListening && !muted) {
+        voiceModeRef.current = true;
+        setVoiceMode(true);
+        try {
+          await window.companion.voiceStart();
+          setVoiceState('listening');
+        } catch {
+          voiceModeRef.current = false;
+          setVoiceMode(false);
+          setVoiceState('off');
+          setVoiceError('Listening could not resume after speech output.');
+        }
+      } else if (voiceModeRef.current) {
         setVoiceState('listening');
       }
     }
   }
 
 
-  async function sendMessage(content: string, speak = false): Promise<void> {
+  async function sendMessage(content: string, speak = false, source: 'owner_ui' | 'owner_voice' = 'owner_ui'): Promise<void> {
     if (!content.trim() || !activeConv) return;
     setBusy(true);
     setError('');
     try {
-      // OS control natural-language commands
+      // OS control natural-language commands. The main process decides whether
+      // the action is allowed; the UI never confirms on the owner's behalf.
       try {
-        const osResult: any = await window.companion.osTryCommand(content);
+        const osResult: any = await window.companion.osTryCommand(content, source);
         if (osResult?.handled) {
-          const summary = osResult.result?.status === 'needs_confirmation'
-            ? `This action needs confirmation. Action hash: ${osResult.result.actionHash}`
-            : `OS action ${osResult.toolName}: ${JSON.stringify(osResult.result?.result ?? osResult.result)}`;
+          const status = osResult.result?.status;
+          const summary = status === 'needs_confirmation'
+            ? `I need your explicit confirmation before I do that. Review the action below; nothing has been sent or changed yet.`
+            : status === 'denied'
+              ? `I did not run that. ${osResult.result?.error ?? 'The action was blocked.'}`
+              : status === 'failed'
+                ? `That failed: ${osResult.result?.error ?? 'unknown error'}`
+                : osResult.toolName === 'os.whatsappSend'
+                ? `WhatsApp: ${osResult.result?.result?.sent ? 'Sent and observed.' : osResult.result?.result?.typed ? 'Typed, but I could not confirm it was sent.' : 'Not sent.'}`
+                : osResult.toolName === 'os.play'
+                  ? osResult.result?.result?.played
+                    ? 'Playing it now.'
+                    : osResult.result?.result?.error === 'search_page_opened_needs_selection'
+                      ? 'I opened the official YouTube search page. Pick the result you want; I did not scrape or guess.'
+                      : `I could not play that: ${osResult.result?.result?.error ?? 'unknown error'}`
+                  : `Action ${osResult.toolName} finished with status ${status ?? 'unknown'}.`;
           const userMsg = { id: crypto.randomUUID(), role: 'user', content, createdAt: new Date().toISOString() };
           const assistantMsg = { id: crypto.randomUUID(), role: 'assistant', content: summary, createdAt: new Date().toISOString() };
           setMessages((prev) => [...prev, userMsg, assistantMsg]);
+          if (status === 'needs_confirmation' && osResult.result?.actionHash) {
+            setPendingAction({ actionHash: osResult.result.actionHash, toolName: osResult.toolName, input: osResult.input });
+          } else {
+            setPendingAction(null);
+          }
           if (speak) speakReply(summary);
           return;
         }
@@ -315,6 +406,44 @@ export default function App() {
     const content = draft.trim();
     setDraft('');
     await sendMessage(content, false);
+  }
+
+  async function confirmPendingAction(): Promise<void> {
+    if (!pendingAction) return;
+    setBusy(true);
+    try {
+      const result: any = await window.companion.osConfirmTool(pendingAction.actionHash);
+      const summary = result?.confirmed
+        ? `Confirmed ${pendingAction.toolName}: ${result.result?.status ?? 'unknown'}`
+        : `Confirmation failed: ${result?.error ?? 'unknown error'}`;
+      setMessages((prev) => [...prev, {
+        id: crypto.randomUUID(),
+        role: 'assistant',
+        content: summary,
+        createdAt: new Date().toISOString()
+      }]);
+      setPendingAction(null);
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function rejectPendingAction(): Promise<void> {
+    if (!pendingAction) return;
+    try {
+      await window.companion.osRejectTool(pendingAction.actionHash);
+      setPendingAction(null);
+      setMessages((prev) => [...prev, {
+        id: crypto.randomUUID(),
+        role: 'assistant',
+        content: 'Cancelled. Nothing was sent or changed.',
+        createdAt: new Date().toISOString()
+      }]);
+    } catch (e) {
+      setError(String(e));
+    }
   }
 
   function startListening(): void {
@@ -343,9 +472,18 @@ export default function App() {
     setVoiceState('off');
     setInterimTranscript('');
     void window.companion.voiceStop();
+    void window.companion.voiceStopSpeaking();
     window.speechSynthesis?.cancel();
     speakingRef.current = false;
     setSpeaking(false);
+  }
+
+  async function stopEverything(): Promise<void> {
+    stopListening();
+    if (pendingAction) {
+      try { await window.companion.osRejectTool(pendingAction.actionHash); } catch { /* ignore */ }
+      setPendingAction(null);
+    }
   }
 
 
@@ -653,11 +791,14 @@ export default function App() {
                   </div>
                 </div>
                 <div className="voice-actions">
-                  {voiceMode ? <button className="danger" onClick={stopListening}>Pause listening</button> : <span className="muted">Always listening…</span>}
-                  <button onClick={() => setMuted((m) => !m)}>{muted ? 'Unmute' : 'Mute'}</button>
+                  {voiceMode
+                    ? <button className="danger" onClick={stopListening}>Pause listening</button>
+                    : <button onClick={startListening} disabled={!activeConv || muted}>Start listening</button>}
+                  <button onClick={() => void toggleMute()}>{muted ? 'Unmute' : 'Mute'}</button>
+                  <button className="danger" onClick={() => void stopEverything()}>Stop everything</button>
                 </div>
                 <div className="living-indicator" aria-live="polite">
-                  <span className="pulse" /> Companion is always listening and learning
+                  <span className="pulse" /> {voiceMode ? 'Microphone active. Say "stop" to pause.' : 'Microphone off. Nothing is recorded.'}
                 </div>
                 {interimTranscript && <div className="voice-transcript" aria-live="polite">{interimTranscript}</div>}
                 {voiceError && <div className="voice-error" role="alert">{voiceError}</div>}
@@ -675,6 +816,18 @@ export default function App() {
                     <div className="message-content">{m.content}</div>
                   </div>
                 ))}
+                {pendingAction && (
+                  <div className="confirmation-card" role="alertdialog" aria-label="Confirmation required">
+                    <h4>Confirm action</h4>
+                    <p><strong>{pendingAction.toolName}</strong></p>
+                    <pre>{JSON.stringify(pendingAction.input, null, 2)}</pre>
+                    <div className="confirmation-actions">
+                      <button onClick={() => void confirmPendingAction()} disabled={busy}>Confirm</button>
+                      <button className="danger" onClick={() => void rejectPendingAction()} disabled={busy}>Cancel</button>
+                    </div>
+                    <p className="muted">Nothing changes until you confirm. Messaging is never marked Sent without observation.</p>
+                  </div>
+                )}
               </div>
 
               <div className="composer">

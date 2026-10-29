@@ -6,7 +6,7 @@ import { SqliteMemoryRepository } from './repository.js';
 import { createMemoryRetriever } from './retriever.js';
 import { createMemoryRecorder } from './recorder.js';
 import { correctMemory } from './corrections.js';
-import { listApprovalInbox, approveMemory, rejectMemory, getMemoryTimeline } from './approval.js';
+import { listApprovalInbox, approveMemory, rejectMemory, getMemoryTimeline, wasMemoryRejected } from './approval.js';
 
 describe('memory pipeline', () => {
   let tempDir: string;
@@ -54,6 +54,8 @@ describe('memory pipeline', () => {
     const mem = repo.listProposed()[0]!;
     rejectMemory(repo, mem.id, () => new Date('2025-01-02T00:00:00.000Z'));
     expect(repo.getById(mem.id)?.approval).toBe('rejected');
+    expect(wasMemoryRejected(repo, 'FACT', ' bad ')).toBe(true);
+    expect(wasMemoryRejected(repo, 'fact', 'different')).toBe(false);
   });
 
   it('corrects a memory and records timeline', async () => {
@@ -78,6 +80,13 @@ describe('memory pipeline', () => {
     const mems = repo.list({ includeDeleted: true });
     expect(mems).toHaveLength(1);
     expect(mems[0]!.category).toBe('conversation');
+  });
+
+  it('can disable conversation-content learning by default for the desktop app', async () => {
+    const repo = new SqliteMemoryRepository(db.raw);
+    const recorder = createMemoryRecorder(repo, { recordConversation: false });
+    await recorder('message from another person', 'assistant summary');
+    expect(repo.list({ includeDeleted: true })).toHaveLength(0);
   });
 });
 

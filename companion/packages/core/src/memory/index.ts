@@ -1,6 +1,7 @@
 export * from './contracts.js';
 export * from './repository.js';
 export * from './retriever.js';
+export * from './learning-policy.js';
 export * from './recorder.js';
 export * from './corrections.js';
 export * from './approval.js';

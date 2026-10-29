@@ -27,5 +27,32 @@ export * from './onboarding/index.js';
 export * from './tools/index.js';
 export * from './background/index.js';
 export * from './privacy/index.js';
+export * from './cognition/contracts.js';
+export * from './cognition/prompt-compiler.js';
+export * from './cognition/style-normalizer.js';
+export * from './cognition/decision-orchestrator.js';
+export * from './messaging/index.js';
+export * from './media/index.js';
+export * from './proactive/index.js';
+export * from './lifecycle/index.js';
+export * from './voice/greeting.js';
+export {
+  defaultDenylistPolicy,
+  EmergencyStop,
+  isSensitiveTarget,
+  TrustedIntentGuard
+} from './security/index.js';
+export type {
+  AuthorizationDecision,
+  AuthorizationInput,
+  DenylistPolicy,
+  EnvironmentSnapshot,
+  IntegrityLevel,
+  IntentSource,
+  SensitiveTarget
+} from './security/index.js';
 export { createOsControlTools, createOsOpenTool, createOsPlayTool, createOsSpeakTool, createOsCallTool, createOsRunTool } from './os-control/tools.js';
 export * from './os-control/windows.js';
+export * from './os-control/capability-store.js';
+export * from './os-control/uia.js';
+export * from './os-control/clipboard.js';

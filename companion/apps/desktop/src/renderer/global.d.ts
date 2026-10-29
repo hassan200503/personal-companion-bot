@@ -29,6 +29,8 @@ declare global {
     companion: {
       getInfo(): Promise<AppInfo>;
       openExternal(url: string): Promise<void>;
+      getStartup(): Promise<any>;
+      setStartup(enabled: boolean): Promise<any>;
       onboardingGetState(): Promise<any>;
       onboardingRun(): Promise<any>;
       chatListConversations(): Promise<any[]>;
@@ -46,9 +48,10 @@ declare global {
       credentialsDelete(providerId: string): Promise<any>;
       providersAddCustom(config: { name: string; baseUrl: string; model: string }, apiKey: string): Promise<any>;
        osListTools(): Promise<any>;
-       osExecuteTool(toolName: string, input: unknown, confirmationHash?: string): Promise<any>;
-       osTryCommand(text: string): Promise<any>;
-       osConfirmTool(actionHash: string): Promise<any>;
+        osExecuteTool(toolName: string, input: unknown, confirmationHash?: string, source?: string): Promise<any>;
+        osTryCommand(text: string, source?: string): Promise<any>;
+        osConfirmTool(actionHash: string): Promise<any>;
+        osRejectTool(actionHash: string): Promise<any>;
         voiceStart(): Promise<any>;
         voiceStop(): Promise<any>;
         memoryGetProfile(): Promise<any>;

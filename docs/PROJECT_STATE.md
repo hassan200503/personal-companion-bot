@@ -3,7 +3,7 @@
 Last updated: 2026-10-29
 Brief: `docs/AGENT_BRIEF.md` (v3 master brief, adopted 2026-10-29). The previous handoff brief is archived at `docs/archive/AGENT_BRIEF-v1-handoff.md`.
 Current milestone: M0/M1 transition, safety hardening first
-Status: Baseline verified; critical trust-boundary gaps identified and being fixed
+Status: Core hardening advanced: browser-safe greeting/safe-speech integration, ranked media, fixture messaging, proactive policy, proposal-only learning, live typed cognition, persona regression coverage, reusable UIA probing, integrity probing, persisted startup controls, single-instance lock, heartbeat/marker protocol, detached capped supervisor, emergency-stop wiring, postcondition enforcement, durable capability observation tracking, immutable policy bundle, clipboard restoration helper and rejection lookup are implemented. Latest full verify passes 39 files / 248 tests. Runtime GUI E2E and several production adapters remain open.
 
 ## What this project is
 
@@ -18,7 +18,8 @@ The legacy bot is separate and must not be changed or restarted without the owne
 - `npm.cmd run verify` from `companion/`: ESLint 0 errors / 6 warnings, TypeScript clean, 20 test files / 182 tests passed, Electron main/preload and Vite renderer built.
 - `docs/AGENT_BRIEF.md` replaced with the v3 master brief; v1 archived.
 - New registry `docs/REQUIREMENTS.md` grades every SC and K/V/O/W/M/P/L/S row from source inspection and the baseline run. New `docs/GAPS.md` records the fix order.
-- The existing tests are mostly storage, onboarding, provider and memory unit tests. They do not cover OS control, greeting, voice safety, lock state, messaging verification, proactive or learning behavior.
+- Latest `npm.cmd run verify`: 0 lint errors/warnings, TypeScript clean, 21 test files / 201 tests passed, Electron main/preload and Vite renderer built (section 15).
+- The existing tests are mostly storage, onboarding, provider and memory unit tests. New security/tool tests cover trusted-intent denial, lock/secure desktop, sensitive targets, class 3/4 policy, confirmation mismatch and the honest WhatsApp return. There is still no Electron E2E, real lock transition, fixture messenger or injection corpus.
 
 ## Already working (verified by tests or inspection)
 
@@ -29,17 +30,29 @@ The legacy bot is separate and must not be changed or restarted without the owne
 - Memory proposals, approval inbox, corrections and retrieval of approved memories.
 - Tool registry blocks Class 4 registration; policy denies Class 4; audit log persists.
 - Electron shell with sandboxed preload, session token on IPC, tray, pause/exit, update check, provider setup UI and chat UI.
+- Trusted-intent guard, environment probe (locked/secure desktop + foreground process/title), sensitive-target denylist, fail-closed probe errors, class 3 confirmation, confirmation mismatch detection and emergency-stop core.
+- IPC now grants a safe default permission set, supplies the real environment snapshot, marks non-owner sources untrusted, and never auto-confirms.
+- WhatsApp returns typed/sent/verified honestly; no "Sent" claim without observation.
+- `playMedia` opens the official search page instead of scraping HTML.
+- Startup greeting with owner name and time of day; explicit Start listening instead of auto-dictation.
 
-## Critical gaps (from `docs/GAPS.md`)
+## Safety slice status
 
-1. `osTryCommand` grants all permissions and auto-confirms any tool that asks for confirmation, including `os.run`. Renderer text is treated as trusted.
-2. WhatsApp send returns `sent: true` after SendKeys without observing a sent bubble; it is risk class 2 and unconfirmed.
-3. `playMedia` scrapes YouTube search HTML and opens the first result, which the brief forbids.
-4. No locked-screen, elevated-window or sensitive-window guard.
-5. No greeting at app open.
-6. No prompt compiler, Turn Decision contract, style normalizer or persona suite.
-7. Continuous dictation auto-starts with an active chat; no wake word; mute is renderer-only.
-8. No proactive engine, evidence thresholds, sensitive-trait guard or recipe system.
+1. FIXED: trusted-intent and IPC permission boundary; verified by unit tests and typecheck.
+2. FIXED: Class 3 confirmation and no auto-confirm; confirmation UI exists; end-to-end test still pending.
+3. FIXED: WhatsApp honesty and risk class; observation reader still absent.
+4. FIXED: YouTube HTML scraping removed.
+5. PARTIAL: lock/secure desktop and sensitive-target guard; no real integrity-level probe.
+6. PARTIAL: greeting; no pronunciation, variation, quiet hours or startup-latency proof.
+7. PARTIAL: explicit mic control; no wake word (G1) and mute is not persisted.
+
+## Open critical work
+
+1. Add an injection corpus and explicit routing of screen/audio text as `untrusted_content`.
+2. Add an Electron E2E test for confirmation, denial and locked-screen behavior.
+3. Add a real integrity-level/elevated-window check and postcondition observation.
+4. Replace substring media matching with ranked local results and an official fallback.
+5. Add prompt compiler, Turn Decision contract, style normalizer and persona suite.
 
 ## Blocked
 
@@ -53,9 +66,9 @@ The legacy bot is separate and must not be changed or restarted without the owne
 
 ## Next three tasks
 
-1. Add the trust boundary: owner-intent source, locked-screen and denylist guard, no auto-confirm, Class 3 confirmation UI, reject untrusted content.
-2. Fix WhatsApp honesty and media scraping; add tests.
-3. Add Greeting Composer with offline TTS, pronunciation override, mute and quiet hours; wire it to app startup without delaying the window.
+1. Wire every screen/audio/file producer to `routeExternalContent`, then add an Electron E2E test for confirmation/denial/locked screen.
+2. Integrate the reusable UIA probe/capability store with typed adapters and a measured 10-task benchmark.
+3. Add persistent supervisor restart behavior, kill tests and resource/soak measurements.
 
 ## Commands that work
 
@@ -85,12 +98,16 @@ npm run package
 
 ## Known defects
 
-- Six ESLint warnings (unused disable directives) in `apps/desktop/src/main/index.ts`.
-- Installer unsigned, default icon, not installed on a clean machine; SmartScreen/uninstall/first-run unverified.
+- No automated Electron GUI test; startup/heartbeat and bundled real speech/Calculator smoke passed, but confirmation UI, media UI and lock transitions are not yet observed end-to-end.
+- Real Windows lock/secure-desktop/elevated target transitions were not exercised; the foreground token-integrity probe and lifecycle markers are implemented and smoke-tested, but runtime security transition evidence is pending.
+- `sendWhatsAppMessage` still has no UI-automation observation; it correctly reports `typed_but_unconfirmed`, but `sent/verified` can never become true yet.
+- Greeting composer is integrated into the renderer with persisted mute/quiet-hour settings; real audio output, editable pronunciation settings and <=3 s UI-ready timing remain unmeasured.
+- Mute is renderer state only; main-process TTS is not persistently gated.
+- Injection corpus covers seven external origins and classes 1-3; fixture messenger, ranked media, proactive and learning-policy tests now run. Desktop chat no longer copies conversation content into learning by default, but producer wiring, kill tests and soak remain open.
+- NSIS packaging produced `apps/desktop/release/Companion-0.1.0-x64.exe` (latest SHA-256 recorded in V-64), and packaged runtime/supervisor external-termination smokes passed in V-65/V-69; the installer is unsigned, uses the default icon, and has not been installed on a clean machine; SmartScreen/uninstall/first-run remain unverified.
 - CI has not run on GitHub because the repository has not been pushed.
-- No end-to-end Electron test.
 - Logger redaction does not cover secrets embedded in free-text messages or error strings.
-- Runtime memory and idle CPU were not measured; no one-hour soak.
+- Runtime memory and idle CPU were not measured.
 - Third-party MIT notices for bundled native packages are not in the package.
 - Legacy WhatsApp bot health was not exercised this session.
 

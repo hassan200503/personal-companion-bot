@@ -1,57 +1,58 @@
 # Gap List (v3 brief)
 
-Baseline: 2026-10-29. Graded against `docs/REQUIREMENTS.md`. `npm.cmd run verify` passed 182 tests, but the tests do not cover the gaps below.
+Baseline: 2026-10-29. Graded against `docs/REQUIREMENTS.md`.
+Latest verification: `npm.cmd run verify` from `companion/` passed 0 lint errors/warnings, clean TypeScript, 39 test files / 248 tests, and both builds. See `docs/VERIFICATION_LOG.md` section 30.
+Status values: `FIXED` means code + verification exist for the stated slice; `PARTIAL` means some behavior is present but the acceptance check is not fully met; `OPEN` means no implementation.
 
 ## Critical
 
-| ID | Gap | Evidence | Dependency |
-| --- | --- | --- | --- |
-| GAP-01 | Untrusted text can execute OS actions, and Class 3 actions auto-confirm | `apps/desktop/src/main/index.ts:685-701` grants every permission; `:859-863` confirms any `needs_confirmation` result immediately. `osTryCommand` accepts any renderer text as trusted. | None. Fix first. |
-| GAP-02 | WhatsApp reports `sent: true` without observing a sent message; tool is risk class 2 | `packages/core/src/os-control/windows.ts:373-411`; `tools.ts:209-229`. Violates SC4/W2/W3. | GAP-01 |
-| GAP-03 | Media playback scrapes YouTube HTML, which the brief forbids | `packages/core/src/os-control/windows.ts:97-116`. | None; replace with official search page or API. |
-| GAP-04 | No locked-screen, elevated-window or sensitive-window guard | No code; `docs/REQUIREMENTS.md` O1/O2/V8. | GAP-01 |
-| GAP-05 | No greeting at app open | `apps/desktop/src/main/index.ts` has no greeting path; SC1 fails. | None. |
+| ID | Gap | Evidence | Dependency | Status |
+| --- | --- | --- | --- | --- |
+| GAP-01 | Untrusted text can execute OS actions, and Class 3 actions auto-confirm | Was: IPC granted every permission and `osTryCommand` auto-confirmed. Now: `packages/core/src/security` denies untrusted/system sources, locked/secure desktop and sensitive targets; IPC grants safe defaults only; auto-confirm removed; confirmation UI added. | None. | FIXED (unit/build; runtime E2E pending) |
+| GAP-02 | WhatsApp reports `sent: true` without observing a sent message; tool is risk class 2 | Now returns `{typed, sent, verified}`; `sent/verified` stay false without observation; class 3 + `os.message.send` + confirmation. | GAP-01 | FIXED (honesty semantics; observation still absent) |
+| GAP-03 | Media playback scrapes YouTube HTML, which the brief forbids | Scraping removed; official search page opened and `played: false` returned until owner selection. | None. | FIXED |
+| GAP-04 | No locked-screen, elevated-window or sensitive-window guard | Probe now reads foreground token integrity, locked/secure desktop and target denylist; real elevated/locked transitions remain manual. | GAP-01 | PARTIAL |
+| GAP-05 | No greeting at app open | `composeGreeting` is integrated into the renderer with persisted mute/quiet-hour settings; audio observation and latency instrumentation remain open. | None. | PARTIAL |
 
 ## High
 
-| ID | Gap | Evidence | Dependency |
-| --- | --- | --- | --- |
-| GAP-06 | No persona contract, prompt compiler, Turn Decision or style normalizer | `DefaultConversationEngine` sends plain text; SC2/K1-K4 fail. | None. |
-| GAP-07 | Continuous dictation starts when a chat is active; no wake word, no explicit persistent mute | `App.tsx:106-113`, `:320-349`; SC6/V5/V7. | G1 for wake word. Mute can be fixed now. |
-| GAP-08 | No media ranking or disambiguation | `playMedia` first substring match; SC8/M1 fails. | GAP-03 |
-| GAP-09 | No proactive engine or reason records | None; SC7/P1-P4 fail. | None; core module can be added. |
-| GAP-10 | No evidence thresholds, sensitive-trait guard, rejection suppression or weekly review | `memory/recorder.ts` records every exchange; SC9/L1/L3/L4/L5 fail. | None. |
-| GAP-11 | No single-instance lock, supervisor, heartbeat or stop marker | Main process lifecycle; SC5 fails. | None, but hang restart requires a supervisor design. |
-| GAP-12 | No injection corpus or screen-text trust boundary test | No tests; SC10/S1 fails. | GAP-01 |
+| ID | Gap | Evidence | Dependency | Status |
+| --- | --- | --- | --- | --- |
+| GAP-06 | No persona contract, prompt compiler, Turn Decision or style normalizer | L0-L7 prompt compiler, TurnDecision validator, live typed cognition and a 30-prompt/three-profile persona suite are tested; plan/confirmation handoff and provider-switch persistence remain open. | None. | PARTIAL |
+| GAP-07 | Continuous dictation starts when a chat is active; no wake word, no explicit persistent mute | Auto-start removed; UI has explicit Start/Pause and a visible mic-off message; mute still renderer-only. | G1 for wake word; mute can be finished now. | PARTIAL |
+| GAP-08 | No media ranking or disambiguation | Ranked resolver is used by `playMedia` and returns candidates for close matches; indexing, provider adapters and playback observation remain open. | GAP-03 | PARTIAL |
+| GAP-09 | No proactive engine or reason records | Core engine tests budgets, quiet hours, cooldowns, dismissal and reasons; scheduler/storage/UI integration remains open. | None. | PARTIAL |
+| GAP-10 | No evidence thresholds, sensitive-trait guard, rejection suppression or weekly review | Learning policy rejects weak evidence, sensitive traits and third-party content; repository-backed rejection lookup is tested; desktop conversation learning is disabled by default. Consolidation, proposal integration and weekly review remain open. | None. | PARTIAL |
+| GAP-11 | No single-instance lock, supervisor, heartbeat or stop marker | Single-instance lock, persisted startup controls, live heartbeat/crash/owner-stop markers and detached capped supervisor exist; fixture restart smoke passed, but real crash/hang app restart, sleep/mic handling and resource measurements remain open. | None. | PARTIAL |
+| GAP-12 | No injection corpus or screen-text trust boundary test | `routeExternalContent` labels web, email, file, screen, filename, notification and audio content as `untrusted_content`; corpus test denies classes 1-3. Runtime producer wiring and Electron E2E remain open. | GAP-01 | PARTIAL |
 
 ## Medium
 
-| ID | Gap | Evidence | Dependency |
-| --- | --- | --- | --- |
-| GAP-13 | No postcondition verification for OS actions | Tools return launch success; O3 fails. | UIA or process/window probe |
-| GAP-14 | No UIA service, capability probe or app adapters | O1-O4, SC3 fail. | None, but large. |
-| GAP-15 | No fixture messenger in CI | W7 fails. | GAP-02 |
-| GAP-16 | No last-seen reader | W4 fails. | UIA |
-| GAP-17 | No emergency stop | O5 fails. | None; small core module. |
-| GAP-18 | Clipboard may not be restored after paste | O7: no paste path exists, so not yet testable. | UIA |
-| GAP-19 | No kill tests or soak | SC12 partial. | After feature work. |
-| GAP-20 | Six ESLint warnings for unused disable directives | `npm run verify` output, 2026-10-29. | None. |
+| ID | Gap | Evidence | Dependency | Status |
+| --- | --- | --- | --- | --- |
+| GAP-13 | No postcondition verification for OS actions | Executor enforces declared postconditions; known app launches observe processes and real Calculator smoke passed. UIA observations for arbitrary apps remain open. | UIA or process/window probe | PARTIAL |
+| GAP-14 | No UIA service, capability probe or app adapters | Reusable typed UIA service and real Notepad probe passed with 39 descendants; durable key-value-backed capability store is tested, but encrypted-settings integration, app adapters and 10-task benchmark remain open. | None, but large. | PARTIAL |
+| GAP-15 | No fixture messenger in CI | Fixture messenger end-to-end tests run in Vitest; a separate fixture desktop app and production adapter remain open. | GAP-02 | PARTIAL |
+| GAP-16 | No last-seen reader | W4 fails. | UIA | OPEN |
+| GAP-17 | No emergency stop | Core `EmergencyStop`, UI button and global `Ctrl+Shift+Esc` now abort armed tool controllers, stop voice/TTS and reject pending confirmations; timing/E2E remains open. | None. | PARTIAL |
+| GAP-18 | Clipboard may not be restored after paste | O7: no paste path exists, so not yet testable. | UIA | OPEN |
+| GAP-19 | No kill tests or soak | SC12 partial. | After feature work. | OPEN |
+| GAP-20 | Six ESLint warnings for unused disable directives | Removed; `npm run verify` now reports 0 warnings. | None. | FIXED |
 
 ## Low
 
-| ID | Gap | Evidence | Dependency |
-| --- | --- | --- | --- |
-| GAP-21 | Installer unsigned and not clean-machine tested | PROJECT_STATE known defects. | Owner/VM |
-| GAP-22 | CI has not run on GitHub | Repository not pushed. | Owner push decision |
-| GAP-23 | No third-party notices in packaged app | PROJECT_STATE known defects. | Release work |
+| ID | Gap | Evidence | Dependency | Status |
+| --- | --- | --- | --- | --- |
+| GAP-21 | Installer unsigned and not clean-machine tested | NSIS artifact and unpacked packaged-runtime smoke passed (V-64/V-65), but signing and clean-machine installation/uninstall/SmartScreen checks remain open. | Owner/VM/G4 | OPEN |
+| GAP-22 | CI has not run on GitHub | Repository not pushed. | Owner push decision | OPEN |
+| GAP-23 | No third-party notices in packaged app | PROJECT_STATE known defects. | Release work | OPEN |
 
 ## Fix order
 
-1. GAP-01, GAP-02, GAP-04: trust boundary and action authorization.
-2. GAP-03, GAP-08: media safety and ranking.
-3. GAP-05, GAP-07: greeting and mute.
-4. GAP-06: constancy core.
-5. GAP-09, GAP-10: proactive and learning cores.
-6. GAP-11, GAP-17, GAP-12: lifecycle, emergency stop, injection tests.
-7. GAP-13 to GAP-16: UIA and fixture messenger.
-8. GAP-19 to GAP-23: verification and release.
+1. GAP-12, GAP-14: producer provenance and Electron/UI Automation E2E.
+2. GAP-04, GAP-13: exercise integrity probe and add concrete OS observations.
+3. GAP-06: wire prompt compiler, TurnDecision repair/failover and persona suite into conversation engine.
+4. GAP-07, GAP-09, GAP-10: persistent voice controls, scheduler/storage, rejection suppression and weekly review.
+5. GAP-11, GAP-17, GAP-19: supervisor, global emergency stop, kill tests and soak.
+6. GAP-16, GAP-18: real messenger observation/clipboard-safe UIA paths.
+9. GAP-19 to GAP-23: soak, verification and release.

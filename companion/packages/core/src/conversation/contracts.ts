@@ -7,6 +7,7 @@
 
 import type { ChatMessage } from '../providers/contracts.js';
 import type { ProviderRouter } from '../providers/router.js';
+import type { PersistentSelf } from '../cognition/prompt-compiler.js';
 
 export type ConversationRole = 'system' | 'user' | 'assistant' | 'tool';
 
@@ -46,6 +47,12 @@ export interface ConversationEngineOptions {
   memoryRetriever?: (query: string) => Promise<string[]>;
   memoryRecorder?: (user: string, assistant: string) => Promise<void>;
   conversationStore?: ConversationStore;
+  cognition?: {
+    self: PersistentSelf;
+    ownerModel?: string;
+    toolSchemas?: readonly string[];
+    situation?: () => string;
+  };
 }
 
 export class ConversationError extends Error {

@@ -4,6 +4,7 @@
 
 import { z } from 'zod';
 import type { MemoryRepository } from '../memory/contracts.js';
+import type { EnvironmentSnapshot, IntentSource, TrustedIntentGuard } from '../security/index.js';
 
 export type RiskClass = 1 | 2 | 3 | 4;
 export type DataClassification = 'public' | 'personal' | 'sensitive' | 'secret';
@@ -44,6 +45,7 @@ export interface ConfirmationManager {
   reject(actionHash: string): boolean;
   isConfirmed(actionHash: string): boolean;
   markConsumed(actionHash: string): void;
+  rejectAll?(): number;
 }
 
 export interface ToolExecutionContext {
@@ -59,6 +61,8 @@ export interface ToolExecutionContext {
   memoryRepository?: MemoryRepository;
   draftStore?: { create(title: string, content: string): string; list(): { id: string; title: string; content: string }[] };
   now: () => Date;
+  environment?: EnvironmentSnapshot;
+  securityGuard?: TrustedIntentGuard;
 }
 
 export interface ToolDefinition<TInput = unknown, TOutput = unknown> {
@@ -77,6 +81,7 @@ export interface ToolDefinition<TInput = unknown, TOutput = unknown> {
   audit: AuditLevel;
   platforms: string[];
   execute: (ctx: ToolExecutionContext, input: TInput) => Promise<TOutput>;
+  postcondition?: (ctx: ToolExecutionContext, input: TInput, output: TOutput) => Promise<boolean> | boolean;
 }
 
 export interface ToolCallRequest {
@@ -84,6 +89,7 @@ export interface ToolCallRequest {
   toolVersion?: string;
   input: unknown;
   trust: TrustLevel;
+  intentSource?: IntentSource;
   confirmationHash?: string;
   requestedBy?: string;
 }

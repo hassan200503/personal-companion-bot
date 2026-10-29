@@ -16,6 +16,8 @@ import type {
   ConversationStore,
 } from './contracts.js';
 import { ConversationError } from './contracts.js';
+import { DecisionOrchestrator, type DecisionSource } from '../cognition/decision-orchestrator.js';
+import { buildContextPacket } from '../cognition/prompt-compiler.js';
 
 export { ConversationError } from './contracts.js';
 
@@ -36,6 +38,7 @@ export class DefaultConversationEngine implements ConversationEngine {
   private degraded = false;
   private memoryRetriever?: (query: string) => Promise<string[]>;
   private memoryRecorder?: (user: string, assistant: string) => Promise<void>;
+  private readonly cognition?: ConversationEngineOptions['cognition'];
 
   constructor(options: ConversationEngineOptions) {
     this.router = options.router;
@@ -48,6 +51,7 @@ export class DefaultConversationEngine implements ConversationEngine {
     this.now = options.now ?? (() => new Date());
     this.memoryRetriever = options.memoryRetriever;
     this.memoryRecorder = options.memoryRecorder;
+    this.cognition = options.cognition;
     this.conversationStore = options.conversationStore;
     if (this.conversationStore) {
       for (const c of this.conversationStore.loadAll()) {
@@ -139,15 +143,15 @@ export class DefaultConversationEngine implements ConversationEngine {
 
     let response: ChatCompletionResponse;
     try {
-      response = await this.router.complete(
-        {
-          model: this.defaultModel,
-          messages,
-          maxTokens: this.maxOutputTokens,
-          temperature: this.temperature,
-        },
-        signal
-      );
+      if (this.cognition) {
+        const result = await this.decide(messages, userContent, memorySnippets, signal);
+        response = { model: result.model, content: result.content, finishReason: 'stop', metadata: { providerId: result.providerId } };
+      } else {
+        response = await this.router.complete(
+          { model: this.defaultModel, messages, maxTokens: this.maxOutputTokens, temperature: this.temperature },
+          signal
+        );
+      }
     } catch (error) {
       this.degraded = true;
       if (signal.aborted) {
@@ -171,6 +175,7 @@ export class DefaultConversationEngine implements ConversationEngine {
       content: response.content,
       createdAt: this.now().toISOString(),
       model: response.model,
+      providerId: response.metadata?.providerId as string | undefined,
       status: 'completed',
     };
     conv.messages.push(assistantMsg);
@@ -191,6 +196,11 @@ export class DefaultConversationEngine implements ConversationEngine {
     userContent: string,
     signal: AbortSignal
   ): AsyncIterable<string> {
+    if (this.cognition) {
+      const reply = await this.sendMessage(conversationId, userContent, signal);
+      yield reply.content;
+      return;
+    }
     const conv = this.conversations.get(conversationId);
     if (!conv) {
       throw new ConversationError('not_found', `Conversation ${conversationId} not found`);
@@ -293,6 +303,47 @@ export class DefaultConversationEngine implements ConversationEngine {
     }
 
     return msgs;
+  }
+
+  private async decide(
+    messages: ChatMessage[],
+    userContent: string,
+    memorySnippets: string[],
+    signal: AbortSignal
+  ): Promise<{ content: string; model: string; providerId: string }> {
+    const sources: DecisionSource[] = this.router.getProviders().map((registration) => ({
+      id: registration.provider.id,
+      complete: async (prompt, sourceSignal) => {
+        const result = await registration.provider.complete({
+          model: registration.model ?? this.defaultModel,
+          messages: [{ role: 'system', content: prompt }],
+          maxTokens: this.maxOutputTokens,
+          temperature: this.temperature,
+          jsonMode: true,
+        }, sourceSignal);
+        return result.content;
+      },
+    }));
+    const packet = buildContextPacket({
+      self: {
+        identity: this.cognition!.self.identity,
+        style: this.cognition!.self.style,
+        policy: `${this.cognition!.self.policy}\n${this.systemPrompt ?? ''}`,
+      },
+      ownerModel: this.cognition!.ownerModel,
+      situation: this.cognition!.situation?.() ?? '',
+      memories: memorySnippets,
+      recentTurns: [...messages, { role: 'user', content: userContent }],
+      toolSchemas: this.cognition!.toolSchemas,
+      outputContract: 'Return a valid TurnDecision JSON object. Plans are proposals only; the host validates and executes tools.',
+    });
+    const result = await new DecisionOrchestrator(sources).decide(packet, signal);
+    const provider = this.router.getProvider(result.providerId);
+    const model = this.router.getProviders().find((item) => item.provider.id === result.providerId)?.model
+      ?? this.defaultModel
+      ?? provider?.id
+      ?? 'unknown';
+    return { content: result.decision.speech.text, model, providerId: result.providerId };
   }
 
   resetDegraded(): void {
