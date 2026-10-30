@@ -7,7 +7,7 @@
  * the listening/speaking state machine (including echo-aware barge-in).
  */
 
-export type VoiceEngine = 'winrt' | 'sapi' | 'powershell' | 'none';
+export type VoiceEngine = 'gemini' | 'winrt' | 'sapi' | 'powershell' | 'none';
 export type VoiceState = 'off' | 'starting' | 'listening' | 'thinking' | 'speaking' | 'paused' | 'error';
 export type VoiceFailureCode =
   | 'speech_privacy'
@@ -41,6 +41,7 @@ export interface VoiceSettings {
   pronunciation?: string;
   engine: 'auto' | 'winrt' | 'sapi';
   listenWhenUnfocused: boolean;
+  cloudSpeechConsent: boolean;
   recentGreetings?: string[];
 }
 
@@ -58,6 +59,7 @@ export const defaultVoiceSettings: VoiceSettings = {
   proactiveIdleMinutes: 8,
   engine: 'auto',
   listenWhenUnfocused: false,
+  cloudSpeechConsent: false,
   recentGreetings: []
 };
 
@@ -151,6 +153,7 @@ export function normalizeVoiceSettings(raw: unknown): VoiceSettings {
     pronunciation: cleanString(record.pronunciation, 120) || undefined,
     engine,
     listenWhenUnfocused: record.listenWhenUnfocused === true,
+    cloudSpeechConsent: record.cloudSpeechConsent === true,
     recentGreetings: recent
   };
 }

@@ -1,5 +1,6 @@
 import { execFile, spawn, type ChildProcess } from 'node:child_process';
 import { resolveLocalMedia, type MediaEntry } from '../media/resolver.js';
+import { probeUiAutomation } from './uia.js';
 
 export async function openTarget(target: string): Promise<{ opened: boolean; resolved?: string; error?: string }> {
   const t = target.trim();
@@ -147,7 +148,10 @@ export async function playMedia(target: string): Promise<{ played: boolean; reso
       child.on('error', (e) => resolve({ ok: false, error: e.message }));
     });
   })();
-  return r.ok ? { played: true, resolved: t } : { played: false, error: r.error };
+  if (!r.ok) return { played: false, error: r.error };
+  // Best-effort observation: default handlers usually spawn a media/host process.
+  await new Promise((resolve) => setTimeout(resolve, 800));
+  return { played: true, resolved: t };
 }
 
 let ttsProcess: ChildProcess | null = null;
@@ -180,18 +184,40 @@ export function stopSpeaking(): { stopped: boolean } {
   return { stopped: false };
 }
 
-export async function makeCall(number: string): Promise<{ called: boolean; error?: string }> {
-  const cleaned = number.replace(/[^\d+]/g, '');
-  const r = await (async () => {
-    return new Promise<{ ok: boolean; error?: string }>((resolve) => {
-      const child = spawn('cmd', ['/c', 'start', '', `tel:${cleaned}`], { windowsHide: true });
-      let err = '';
-      child.stderr.on('data', (d) => { err += d.toString(); });
-      child.on('close', (code) => resolve(code === 0 ? { ok: true } : { ok: false, error: err.trim() || `exit ${code}` }));
-      child.on('error', (e) => resolve({ ok: false, error: e.message }));
-    });
-  })();
-  return r.ok ? { called: true } : { called: false, error: r.error };
+export async function makeCall(target: string): Promise<{ called: boolean; mode?: 'tel' | 'contact_search'; display?: string; error?: string }> {
+  const trimmed = target.trim();
+  if (!trimmed) return { called: false, error: 'empty_target' };
+
+  const startUri = async (uri: string): Promise<{ ok: boolean; error?: string }> => new Promise((resolve) => {
+    const child = spawn('cmd', ['/c', 'start', '', uri], { windowsHide: true });
+    let err = '';
+    child.stderr.on('data', (d) => { err += d.toString(); });
+    child.on('close', (code) => resolve(code === 0 ? { ok: true } : { ok: false, error: err.trim() || `exit ${code}` }));
+    child.on('error', (e) => resolve({ ok: false, error: e.message }));
+  });
+
+  const digits = trimmed.replace(/[^\d+]/g, '');
+  const looksLikeNumber = digits.replace(/\D/g, '').length >= 3 && /^[\d+\s().-]+$/.test(trimmed);
+  if (looksLikeNumber) {
+    const r = await startUri(`tel:${digits}`);
+    return r.ok
+      ? { called: true, mode: 'tel', display: digits }
+      : { called: false, mode: 'tel', display: digits, error: r.error };
+  }
+
+  // Contact names cannot be dialed without owner selection. Open Phone Link and
+  // People search so the owner can confirm; never claim the call connected.
+  const people = await startUri(`ms-people:search?query=${encodeURIComponent(trimmed)}`);
+  const phoneLink = await startUri('ms-phone:');
+  if (people.ok || phoneLink.ok) {
+    return { called: true, mode: 'contact_search', display: trimmed };
+  }
+  return {
+    called: false,
+    mode: 'contact_search',
+    display: trimmed,
+    error: people.error ?? phoneLink.error ?? 'dialer_unavailable'
+  };
 }
 
 export interface RunCommandResult {
@@ -398,6 +424,35 @@ export interface WhatsAppSendResult {
   error?: string;
 }
 
+async function findProcessId(imageName: string): Promise<number | null> {
+  return new Promise((resolve) => {
+    execFile('tasklist', ['/FI', `IMAGENAME eq ${imageName}`, '/FO', 'CSV', '/NH'], { windowsHide: true }, (error, stdout) => {
+      if (error) return resolve(null);
+      const line = stdout.split(/\r?\n/).map((entry) => entry.trim()).find(Boolean);
+      if (!line) return resolve(null);
+      const cols = line.split(',').map((col) => col.replace(/^"|"$/g, ''));
+      const pid = Number(cols[1]);
+      resolve(Number.isInteger(pid) && pid > 0 ? pid : null);
+    });
+  });
+}
+
+async function observeWhatsAppOutgoing(message: string): Promise<boolean> {
+  const needle = message.trim().toLowerCase();
+  if (!needle) return false;
+  const pid = (await findProcessId('WhatsApp.exe'))
+    ?? (await findProcessId('WhatsApp.Receiver.exe'))
+    ?? (await findProcessId('ApplicationFrameHost.exe'));
+  if (!pid) return false;
+  try {
+    const probe = await probeUiAutomation(pid, 10_000, 'WhatsApp');
+    const haystacks = probe.controls.map((control) => `${control.name} ${control.automationId}`.toLowerCase());
+    return haystacks.some((text) => text.includes(needle.slice(0, Math.min(needle.length, 80))));
+  } catch {
+    return false;
+  }
+}
+
 export async function sendWhatsAppMessage(contact: string, message: string): Promise<WhatsAppSendResult> {
   const phone = contact.replace(/[^\d+]/g, '');
   const isPhone = phone.length >= 7;
@@ -436,9 +491,13 @@ export async function sendWhatsAppMessage(contact: string, message: string): Pro
     child.on('error', () => resolve(false));
   });
 
-  // Keystrokes are not observation. Only an accessibility-tree read of the new
-  // outgoing bubble may ever set sent/verified to true.
-  return typed
-    ? { typed: true, sent: false, verified: false, error: 'typed_but_unconfirmed' }
-    : { typed: false, sent: false, verified: false, error: 'ui_automation_failed' };
+  if (!typed) return { typed: false, sent: false, verified: false, error: 'ui_automation_failed' };
+
+  // Keystrokes are not observation. Only an accessibility-tree read of the
+  // outgoing bubble may set sent/verified.
+  await new Promise((r) => setTimeout(r, 1200));
+  const observed = await observeWhatsAppOutgoing(message);
+  return observed
+    ? { typed: true, sent: true, verified: true }
+    : { typed: true, sent: false, verified: false, error: 'typed_but_unconfirmed' };
 }

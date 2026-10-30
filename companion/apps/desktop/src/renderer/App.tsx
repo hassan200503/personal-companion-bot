@@ -4,6 +4,19 @@ import { composeGreeting } from '@companion/core/voice/greeting';
 import { normalizeSpeech } from '@companion/core/cognition/style-normalizer';
 import { normalizePersonaState } from '@companion/core/voice/personality';
 import { isQuietHours } from '@companion/core/voice/speech';
+import {
+  advanceVoiceGuide,
+  createVoiceGuideProgress,
+  getVoiceGuideStep,
+  isVoiceGuideComplete,
+  needsVoiceGuide,
+  normalizeVoiceGuideProgress,
+  speakableGuideLine,
+  voiceGuideStepIndex,
+  voiceGuideSteps,
+  type VoiceGuideProgress
+} from '@companion/core/onboarding/voice-guide';
+import { VoiceCapture } from './voice-capture';
 
 type Provider = {
   id: string;
@@ -62,6 +75,7 @@ export default function App() {
   const [calibrationStep, setCalibrationStep] = useState<string | null>(null);
   const [calibrationQuestion, setCalibrationQuestion] = useState('');
   const [speechPrivacyNeeded, setSpeechPrivacyNeeded] = useState(false);
+  const [cloudConsentNeeded, setCloudConsentNeeded] = useState(false);
   const [profile, setProfile] = useState<any>({});
   const [auditLogs, setAuditLogs] = useState<any[]>([]);
   const [updateInfo, setUpdateInfo] = useState<any>(null);
@@ -70,13 +84,21 @@ export default function App() {
   const [owner, setOwner] = useState<any>({});
   const [ownerLoaded, setOwnerLoaded] = useState(false);
   const [speaking, setSpeaking] = useState(false);
+  const [navOpen, setNavOpen] = useState(false);
+  const [voiceGuide, setVoiceGuide] = useState<VoiceGuideProgress>(createVoiceGuideProgress());
+  const [guideAnswer, setGuideAnswer] = useState('');
+  const [guideActive, setGuideActive] = useState(false);
+  const [guidePrompt, setGuidePrompt] = useState(getVoiceGuideStep('welcome').prompt);
   const voiceModeRef = useRef(false);
+  const voiceGuideRef = useRef<VoiceGuideProgress>(createVoiceGuideProgress());
+  const guideActiveRef = useRef(false);
   const voiceProcessingRef = useRef(false);
   const speakingRef = useRef(false);
   const greetedRef = useRef(false);
   const activeConvRef = useRef<string | null>(null);
   const sendMessageRef = useRef<(content: string, speak?: boolean, source?: 'owner_ui' | 'owner_voice') => Promise<void>>(async () => {});
   const startListeningRef = useRef<() => Promise<void>>(async () => {});
+  const handleTranscriptRef = useRef<(raw: string) => Promise<void>>(async () => {});
   const lastSpokenRef = useRef('');
   const ignoreUntilRef = useRef(0);
   const lastActivityRef = useRef(Date.now());
@@ -85,6 +107,8 @@ export default function App() {
   const calibrationStepRef = useRef<string | null>(null);
   const mutedRef = useRef(false);
   const autoStartedRef = useRef(false);
+  const captureRef = useRef<VoiceCapture | null>(null);
+  const voiceSettingsRef = useRef<any>({});
 
   const selected = providers.find((p) => p.id === selectedProvider) || providers[0];
 
@@ -111,8 +135,10 @@ export default function App() {
       try {
         const settings: any = await window.companion.voiceGetSettings();
         setVoiceSettings(settings ?? {});
+        voiceSettingsRef.current = settings ?? {};
         setMuted(settings?.muted === true);
         mutedRef.current = settings?.muted === true;
+        setCloudConsentNeeded(settings?.cloudSpeechConsent !== true);
       } catch { /* ignore */ }
       try {
         const loadedPersona: any = await window.companion.personaGet();
@@ -137,7 +163,18 @@ export default function App() {
           proactiveDayRef.current = { day: today, count: 0 };
         }
       } catch { /* ignore */ }
-      try { setOwner(await window.companion.memoryGetOwner()); } catch { /* ignore */ } finally { setOwnerLoaded(true); }
+      let loadedOwner: any = {};
+      try { loadedOwner = await window.companion.memoryGetOwner(); setOwner(loadedOwner); } catch { /* ignore */ } finally { setOwnerLoaded(true); }
+      try {
+        const loadedGuide = normalizeVoiceGuideProgress(await window.companion.onboardingGetVoiceGuide());
+        voiceGuideRef.current = loadedGuide;
+        setVoiceGuide(loadedGuide);
+        const ownerName = typeof loadedOwner?.name === 'string' ? loadedOwner.name : '';
+        const shouldGuide = needsVoiceGuide(loadedGuide, ownerName);
+        setGuideActive(shouldGuide && !isVoiceGuideComplete(loadedGuide));
+        guideActiveRef.current = shouldGuide && !isVoiceGuideComplete(loadedGuide);
+        setGuidePrompt(getVoiceGuideStep(loadedGuide.currentStep).prompt);
+      } catch { /* ignore */ }
     } catch (e) {
       setError(String(e));
     }
@@ -152,53 +189,40 @@ export default function App() {
   }, [muted]);
 
   useEffect(() => {
+    voiceSettingsRef.current = voiceSettings;
+  }, [voiceSettings]);
+
+  useEffect(() => {
     sendMessageRef.current = sendMessage;
     startListeningRef.current = startListening;
+    handleTranscriptRef.current = handleTranscript;
   });
 
   useEffect(() => {
     void loadAll();
     const unsubscribe = window.companion.onVoiceEvent((event) => {
-      if (event.type === 'state') {
-        const nextState = event.state as typeof voiceState;
-        setVoiceState(nextState);
-        if (event.engine && event.engine !== 'none') setVoiceEngine(event.engine);
-        if (event.state === 'listening') {
-          setVoiceError('');
-          setVoiceMode(true);
-          voiceModeRef.current = true;
-        }
-        if (event.state === 'off' || event.state === 'error') {
-          voiceModeRef.current = false;
-          setVoiceMode(false);
-        }
-        if (event.state === 'error') {
-          const code = event.code ?? '';
-          setVoiceError(event.error || 'The listening engine stopped.');
-          setSpeechPrivacyNeeded(code === 'speech_privacy' || code === 'microphone_privacy');
-        }
-        return;
-      }
+      // Native helper is TTS-only now; listen for synthesis lifecycle events.
       if (event.type === 'speech') {
         const started = event.state === 'started';
         speakingRef.current = started;
         setSpeaking(started);
+        if (started) captureRef.current?.pause();
         setVoiceState(started ? 'speaking' : (voiceModeRef.current ? 'listening' : 'off'));
-        if (!started) ignoreUntilRef.current = Date.now() + 1200;
+        if (!started) {
+          ignoreUntilRef.current = Date.now() + 1200;
+          if (voiceModeRef.current) captureRef.current?.resume();
+        }
         return;
       }
-      if (event.type !== 'transcript') return;
-      const text = event.text?.trim();
-      if (!text || !voiceModeRef.current) return;
-      if (!event.final) {
-        if (!speakingRef.current) setInterimTranscript(text);
-        return;
+      if (event.type === 'state' && event.state === 'error') {
+        setVoiceError(event.error || 'The voice helper stopped.');
       }
-      void handleTranscript(text);
     });
     return () => {
       unsubscribe();
       voiceModeRef.current = false;
+      void captureRef.current?.stop();
+      captureRef.current = null;
       window.speechSynthesis?.cancel();
     };
   }, []);
@@ -212,6 +236,12 @@ export default function App() {
   useEffect(() => {
     if (greetedRef.current || !activeConv || !ownerLoaded) return;
     greetedRef.current = true;
+    if (guideActiveRef.current) {
+      void (async () => {
+        if (!muted) await speakReply(guidePrompt || getVoiceGuideStep(voiceGuideRef.current.currentStep).prompt);
+      })();
+      return;
+    }
     const name = typeof owner?.name === 'string' ? owner.name.trim() : '';
     const greetingResult = composeGreeting({
       ownerName: name,
@@ -283,6 +313,152 @@ export default function App() {
     }
   }
 
+  async function persistVoiceGuideDraft(progress: VoiceGuideProgress): Promise<void> {
+    const draft = progress.draft;
+    const nextOwner = {
+      ...owner,
+      name: draft.ownerName || owner?.name || '',
+      phone: draft.ownerPhone || owner?.phone || '',
+      dob: draft.ownerDob || owner?.dob || ''
+    };
+    setOwner(nextOwner);
+    await window.companion.memorySetOwner(nextOwner);
+
+    const currentPersona = normalizePersonaState(persona ?? {});
+    const nextPersona = {
+      ...currentPersona,
+      profile: {
+        ...currentPersona.profile,
+        ownerName: draft.ownerName || currentPersona.profile.ownerName,
+        companionName: draft.companionName || currentPersona.profile.companionName,
+        tone: draft.tone,
+        toneDescription: draft.toneDescription || currentPersona.profile.toneDescription,
+        selfDescription: draft.toneDescription || currentPersona.profile.selfDescription,
+        avoidTopics: draft.avoidTopics.length ? draft.avoidTopics : currentPersona.profile.avoidTopics,
+        updatedAt: new Date().toISOString()
+      },
+      calibration: progress.completedAt
+        ? {
+            ...currentPersona.calibration,
+            completedAt: progress.completedAt,
+            startedAt: progress.startedAt ?? currentPersona.calibration.startedAt,
+            step: voiceGuideSteps.length,
+            answers: {
+              ...currentPersona.calibration.answers,
+              name: draft.ownerName,
+              tone: draft.toneDescription,
+              boundaries: draft.avoidTopics.join(', ')
+            }
+          }
+        : {
+            ...currentPersona.calibration,
+            startedAt: progress.startedAt ?? currentPersona.calibration.startedAt
+          }
+    };
+    const saved: any = await window.companion.personaSet(nextPersona);
+    if (saved?.ok) setPersona(saved.state);
+
+    const nextSettings = {
+      ...voiceSettingsRef.current,
+      cloudSpeechConsent: draft.cloudSpeechConsent === true ? true : voiceSettingsRef.current?.cloudSpeechConsent === true
+    };
+    if (draft.cloudSpeechConsent) {
+      nextSettings.cloudSpeechConsent = true;
+      setCloudConsentNeeded(false);
+    }
+    setVoiceSettings(nextSettings);
+    voiceSettingsRef.current = nextSettings;
+    await window.companion.voiceSetSettings(nextSettings);
+    await window.companion.onboardingSetPreset(draft.privacyPreset);
+    await window.companion.onboardingSetVoiceGuide(progress);
+  }
+
+  async function submitVoiceGuideAnswer(raw: string): Promise<void> {
+    if (!guideActiveRef.current) return;
+    const text = raw.trim();
+    if (!text) return;
+    voiceProcessingRef.current = true;
+    setVoiceState('processing');
+    try {
+      const providerConnected = stored.includes('gemini') || stored.length > 0;
+      const result = advanceVoiceGuide(voiceGuideRef.current, text, { providerConnected });
+      if (result.error) {
+        setVoiceError(result.error);
+        await speakReply(result.error);
+        return;
+      }
+      voiceGuideRef.current = result.progress;
+      setVoiceGuide(result.progress);
+      setGuideAnswer('');
+      setGuidePrompt(result.prompt);
+      await persistVoiceGuideDraft(result.progress);
+      const line = speakableGuideLine(result.acknowledgment, result.prompt);
+      setMessages((prev) => [...prev,
+        { id: crypto.randomUUID(), role: 'user', content: text, createdAt: new Date().toISOString() },
+        { id: crypto.randomUUID(), role: 'assistant', content: line || result.acknowledgment, createdAt: new Date().toISOString() }
+      ]);
+      if (result.progress.draft.cloudSpeechConsent && !voiceModeRef.current && result.progress.currentStep !== 'provider') {
+        // Listening can start after consent; provider step still needs a key first for transcription.
+      }
+      if (line) await speakReply(line);
+
+      if (result.done) {
+        try {
+          await window.companion.onboardingRun();
+          setOnboarding(await window.companion.onboardingGetState());
+        } catch { /* system check is best-effort */ }
+        guideActiveRef.current = false;
+        setGuideActive(false);
+        setStatus('Voice onboarding complete. You can talk naturally now.');
+        setTab('chat');
+        if (result.progress.draft.cloudSpeechConsent && stored.length > 0) {
+          await startListening();
+        }
+      } else if (
+        result.progress.draft.cloudSpeechConsent &&
+        stored.length > 0 &&
+        !voiceModeRef.current &&
+        result.progress.currentStep !== 'provider'
+      ) {
+        await startListening();
+      }
+    } catch (e) {
+      setVoiceError(String(e));
+    } finally {
+      voiceProcessingRef.current = false;
+      if (voiceModeRef.current) {
+        captureRef.current?.resume();
+        setVoiceState('listening');
+      } else {
+        setVoiceState('off');
+      }
+    }
+  }
+
+  async function startVoiceOnboarding(): Promise<void> {
+    const fresh = createVoiceGuideProgress({
+      startedAt: new Date().toISOString(),
+      currentStep: 'welcome',
+      draft: {
+        ...createVoiceGuideProgress().draft,
+        ownerName: typeof owner?.name === 'string' ? owner.name : '',
+        ownerPhone: typeof owner?.phone === 'string' ? owner.phone : '',
+        ownerDob: typeof owner?.dob === 'string' ? owner.dob : '',
+        companionName: persona?.profile?.companionName || 'Companion',
+        providerConnected: stored.length > 0,
+        cloudSpeechConsent: voiceSettingsRef.current?.cloudSpeechConsent === true
+      }
+    });
+    voiceGuideRef.current = fresh;
+    setVoiceGuide(fresh);
+    setGuidePrompt(getVoiceGuideStep('welcome').prompt);
+    guideActiveRef.current = true;
+    setGuideActive(true);
+    setTab('setup');
+    await window.companion.onboardingSetVoiceGuide(fresh);
+    await speakReply(getVoiceGuideStep('welcome').prompt);
+  }
+
   async function runOnboarding() {
     setBusy(true);
     setError('');
@@ -347,10 +523,21 @@ export default function App() {
       }
       const result: any = await window.companion.credentialsSet(selected.id, apiKey.trim(), model || undefined);
       if (!result?.valid) throw new Error(result?.error || 'Could not save key');
-      setStored(await window.companion.credentialsList());
+      const nextStored = await window.companion.credentialsList();
+      setStored(nextStored);
       setApiKey('');
       setValidation(result);
       setStatus(`Saved ${selected.displayName}. ${result.model ? 'Default model: ' + result.model : ''}`);
+      if (guideActiveRef.current) {
+        const nextGuide = {
+          ...voiceGuideRef.current,
+          draft: { ...voiceGuideRef.current.draft, providerConnected: nextStored.length > 0 }
+        };
+        voiceGuideRef.current = nextGuide;
+        setVoiceGuide(nextGuide);
+        await window.companion.onboardingSetVoiceGuide(nextGuide);
+        setStatus(`Saved ${selected.displayName}. Return to the voice guide and say continue.`);
+      }
     } catch (e) {
       setError(String(e));
     } finally {
@@ -435,6 +622,7 @@ export default function App() {
     speakingRef.current = true;
     setSpeaking(true);
     setVoiceState('speaking');
+    captureRef.current?.pause();
     try {
       const result: any = await window.companion.voiceSpeak(safeContent);
       if (result?.error && !result?.skipped) {
@@ -445,6 +633,8 @@ export default function App() {
     } finally {
       speakingRef.current = false;
       setSpeaking(false);
+      ignoreUntilRef.current = Date.now() + 1200;
+      if (voiceModeRef.current) captureRef.current?.resume();
       setVoiceState(voiceModeRef.current ? 'listening' : 'off');
     }
   }
@@ -469,14 +659,24 @@ export default function App() {
               : status === 'failed'
                 ? `That failed: ${osResult.result?.error ?? 'unknown error'}`
                 : osResult.toolName === 'os.whatsappSend'
-                ? `WhatsApp: ${osResult.result?.result?.sent ? 'Sent and observed.' : osResult.result?.result?.typed ? 'Typed, but I could not confirm it was sent.' : 'Not sent.'}`
+                ? `WhatsApp: ${osResult.result?.result?.sent || osResult.result?.result?.verified
+                  ? 'Typed and observed in the chat window. I am not claiming phone delivery.'
+                  : osResult.result?.result?.typed
+                    ? 'Typed, but I could not confirm it appeared in the chat.'
+                    : `Not sent. ${osResult.result?.result?.error ?? ''}`.trim()}`
                 : osResult.toolName === 'os.play'
                   ? osResult.result?.result?.played
-                    ? 'Playing it now.'
-                    : osResult.result?.result?.error === 'search_page_opened_needs_selection'
-                      ? 'I opened the official YouTube search page. Pick the result you want; I did not scrape or guess.'
-                      : `I could not play that: ${osResult.result?.result?.error ?? 'unknown error'}`
-                  : `Action ${osResult.toolName} finished with status ${status ?? 'unknown'}.`;
+                    ? `Playing ${osResult.result?.result?.resolved ? 'the matched local file' : 'it'} now.`
+                    : osResult.result?.result?.error === 'ambiguous_local_match'
+                      ? `I found a few matches: ${(osResult.result?.result?.candidates ?? []).slice(0, 5).join(', ') || 'several files'}. Tell me which one.`
+                      : osResult.result?.result?.error === 'search_page_opened_needs_selection'
+                        ? 'I opened the official YouTube search page. Pick the result you want; I did not scrape or guess.'
+                        : `I could not play that: ${osResult.result?.result?.error ?? 'unknown error'}`
+                  : osResult.toolName === 'os.call'
+                    ? osResult.result?.result?.initiated
+                      ? `I opened the dialer for ${osResult.input?.number ?? osResult.input?.target ?? 'that contact'}. I cannot confirm the call connected.`
+                      : `I could not start the call: ${osResult.result?.result?.error ?? osResult.result?.error ?? 'unknown error'}`
+                    : `Action ${osResult.toolName} finished with status ${status ?? 'unknown'}.`;
           const userMsg = { id: crypto.randomUUID(), role: 'user', content, createdAt: new Date().toISOString() };
           const assistantMsg = { id: crypto.randomUUID(), role: 'assistant', content: summary, createdAt: new Date().toISOString() };
           setMessages((prev) => [...prev, userMsg, assistantMsg]);
@@ -501,7 +701,10 @@ export default function App() {
     } finally {
       setBusy(false);
       voiceProcessingRef.current = false;
-      if (voiceModeRef.current && !speakingRef.current) setVoiceState('listening');
+      if (voiceModeRef.current && !speakingRef.current) {
+        captureRef.current?.resume();
+        setVoiceState('listening');
+      }
     }
   }
 
@@ -517,9 +720,22 @@ export default function App() {
     setBusy(true);
     try {
       const result: any = await window.companion.osConfirmTool(pendingAction.actionHash);
-      const summary = result?.confirmed
+      const toolResult = result?.result?.result ?? result?.result;
+      let summary = result?.confirmed
         ? `Confirmed ${pendingAction.toolName}: ${result.result?.status ?? 'unknown'}`
         : `Confirmation failed: ${result?.error ?? 'unknown error'}`;
+      if (result?.confirmed && pendingAction.toolName === 'os.call') {
+        summary = toolResult?.initiated
+          ? `Dialer opened for ${toolResult.display ?? pendingAction.input?.number}. I cannot confirm the call connected.`
+          : `Call did not start: ${toolResult?.error ?? 'unknown error'}`;
+      }
+      if (result?.confirmed && pendingAction.toolName === 'os.whatsappSend') {
+        summary = toolResult?.sent || toolResult?.verified
+          ? 'WhatsApp: typed and observed in the chat window. I am not claiming phone delivery.'
+          : toolResult?.typed
+            ? 'WhatsApp: typed, but I could not confirm it appeared in the chat.'
+            : `WhatsApp: not sent. ${toolResult?.error ?? ''}`.trim();
+      }
       setMessages((prev) => [...prev, {
         id: crypto.randomUUID(),
         role: 'assistant',
@@ -527,6 +743,7 @@ export default function App() {
         createdAt: new Date().toISOString()
       }]);
       setPendingAction(null);
+      await speakReply(summary);
     } catch (e) {
       setError(String(e));
     } finally {
@@ -550,36 +767,101 @@ export default function App() {
     }
   }
 
+  async function enableCloudSpeech(): Promise<void> {
+    const nextSettings = { ...voiceSettingsRef.current, cloudSpeechConsent: true };
+    setVoiceSettings(nextSettings);
+    voiceSettingsRef.current = nextSettings;
+    setCloudConsentNeeded(false);
+    await window.companion.voiceSetSettings(nextSettings);
+    setStatus('Cloud speech enabled. Short clips are transcribed by Google Gemini; nothing is saved as an audio file.');
+    await startListening();
+  }
+
   async function startListening(): Promise<void> {
     if (!activeConvRef.current) {
       setVoiceError('Create or select a chat before starting live listening.');
       return;
     }
+    if (mutedRef.current) {
+      setVoiceError('Unmute before starting live listening.');
+      return;
+    }
     setVoiceError('');
     setVoiceWarning('');
     setSpeechPrivacyNeeded(false);
+    if (voiceSettingsRef.current?.cloudSpeechConsent !== true) {
+      setCloudConsentNeeded(true);
+      setVoiceState('off');
+      setVoiceMode(false);
+      voiceModeRef.current = false;
+      setVoiceError('Speech needs your OK: short microphone clips are sent to Google Gemini for transcription. Raw audio is not stored on disk.');
+      return;
+    }
     setVoiceState('starting');
     try {
-      const result: any = await window.companion.voiceStart();
-      if (!result?.started) {
-        voiceModeRef.current = false;
-        setVoiceMode(false);
-        setVoiceState('error');
-        setVoiceError(result?.message || 'The microphone did not start. Check Windows microphone and speech privacy settings.');
-        setSpeechPrivacyNeeded(result?.code === 'speech_privacy' || result?.code === 'microphone_privacy');
-        return;
-      }
+      await captureRef.current?.stop();
+      const capture = new VoiceCapture({
+        onSpeechStart: () => {
+          if (!speakingRef.current) setInterimTranscript('Hearing you…');
+        },
+        onUtterance: (audio, mimeType) => {
+          void (async () => {
+            if (!voiceModeRef.current || speakingRef.current || voiceProcessingRef.current) return;
+            if (Date.now() < ignoreUntilRef.current) return;
+            capture.pause();
+            setVoiceState('processing');
+            setInterimTranscript('Transcribing…');
+            try {
+              const result: any = await window.companion.voiceTranscribe(audio, mimeType);
+              if (!result?.ok) {
+                setVoiceError(result?.error || 'Speech transcription failed.');
+                setInterimTranscript('');
+                if (voiceModeRef.current) {
+                  capture.resume();
+                  setVoiceState('listening');
+                }
+                return;
+              }
+              const text = String(result.text ?? '').trim();
+              setInterimTranscript(text);
+              if (!text) {
+                if (voiceModeRef.current) {
+                  capture.resume();
+                  setVoiceState('listening');
+                }
+                return;
+              }
+              await handleTranscriptRef.current(text);
+            } catch (e) {
+              setVoiceError(String(e));
+              if (voiceModeRef.current) {
+                capture.resume();
+                setVoiceState('listening');
+              }
+            }
+          })();
+        },
+        onError: (message) => {
+          setVoiceError(message);
+          setVoiceState('error');
+        }
+      });
+      captureRef.current = capture;
+      await capture.start();
       voiceModeRef.current = true;
       setVoiceMode(true);
       setVoiceState('listening');
-      if (result.engine) setVoiceEngine(result.engine);
-      if (result.warning) setVoiceWarning(result.warning);
-      if (result.settingsUri) setSpeechPrivacyNeeded(true);
+      setVoiceEngine('gemini');
+      setVoiceWarning('Live listening uses Google Gemini for transcription. Raw audio is not written to disk.');
     } catch (e) {
       voiceModeRef.current = false;
       setVoiceMode(false);
-      setVoiceState('off');
-      setVoiceError(String(e));
+      setVoiceState('error');
+      const message = String(e);
+      setVoiceError(message.includes('NotAllowedError') || message.includes('Permission')
+        ? 'Microphone permission was denied. Allow the mic for Companion, then try again.'
+        : message);
+      setSpeechPrivacyNeeded(message.includes('NotAllowedError') || message.includes('Permission'));
     }
   }
 
@@ -589,6 +871,8 @@ export default function App() {
     setVoiceMode(false);
     setVoiceState('off');
     setInterimTranscript('');
+    void captureRef.current?.stop();
+    captureRef.current = null;
     void window.companion.voiceStop();
     void window.companion.voiceStopSpeaking();
     window.speechSynthesis?.cancel();
@@ -617,6 +901,10 @@ export default function App() {
     }
     if (voiceProcessingRef.current) return;
     setInterimTranscript('');
+    if (guideActiveRef.current) {
+      await submitVoiceGuideAnswer(text);
+      return;
+    }
     if (calibrationStepRef.current) {
       await handleCalibrationAnswer(text);
       return;
@@ -657,7 +945,10 @@ export default function App() {
       setVoiceError(String(e));
     } finally {
       voiceProcessingRef.current = false;
-      if (voiceModeRef.current) setVoiceState('listening');
+      if (voiceModeRef.current) {
+        captureRef.current?.resume();
+        setVoiceState('listening');
+      }
     }
   }
 
@@ -702,21 +993,21 @@ export default function App() {
 
   return (
     <div className="app-shell">
-      <aside className="sidebar">
+      <aside className={`sidebar ${navOpen ? '' : 'collapsed'}`}>
         <div className="brand">
           <span className="brand-mark">C</span>
           <div>
             <h2>Companion</h2>
-            <p>Your private AI assistant</p>
+            <p>Voice-first, on your PC</p>
           </div>
         </div>
 
         <nav className="nav">
-          <button className={tab === 'setup' ? 'nav-item active' : 'nav-item'} onClick={() => setTab('setup')}>
+          <button className={tab === 'setup' ? 'nav-item active' : 'nav-item'} onClick={() => { setTab('setup'); setNavOpen(false); }}>
             Setup
           </button>
-          <button className={tab === 'chat' ? 'nav-item active' : 'nav-item'} onClick={() => setTab('chat')}>
-            Chat
+          <button className={tab === 'chat' ? 'nav-item active' : 'nav-item'} onClick={() => { setTab('chat'); setNavOpen(false); }}>
+            Talk
           </button>
         </nav>
 
@@ -749,6 +1040,15 @@ export default function App() {
             <input type="range" min={-10} max={10} value={Number(voiceSettings?.rate ?? 0)} onChange={(e) => setVoiceSettings({ ...voiceSettings, rate: Number(e.target.value) })} />
           </label>
           <label className="checkbox-row">
+            <input type="checkbox" checked={voiceSettings?.cloudSpeechConsent === true} onChange={(e) => {
+              const next = { ...voiceSettings, cloudSpeechConsent: e.target.checked };
+              setVoiceSettings(next);
+              voiceSettingsRef.current = next;
+              setCloudConsentNeeded(!e.target.checked);
+            }} />
+            Cloud speech (Gemini transcription)
+          </label>
+          <label className="checkbox-row">
             <input type="checkbox" checked={voiceSettings?.autoStart !== false} onChange={(e) => setVoiceSettings({ ...voiceSettings, autoStart: e.target.checked })} />
             Start listening automatically
           </label>
@@ -767,7 +1067,14 @@ export default function App() {
             <input type="time" value={voiceSettings?.quietHours?.end ?? ''} onChange={(e) => setVoiceSettings({ ...voiceSettings, quietHours: e.target.value ? { start: voiceSettings?.quietHours?.start || '22:00', end: e.target.value } : undefined })} />
           </label>
           <div className="actions">
-            <button onClick={async () => { const saved: any = await window.companion.voiceSetSettings(voiceSettings); if (saved?.settings) setVoiceSettings(saved.settings); }}>Save voice</button>
+            <button onClick={async () => {
+              const saved: any = await window.companion.voiceSetSettings(voiceSettings);
+              if (saved?.settings) {
+                setVoiceSettings(saved.settings);
+                voiceSettingsRef.current = saved.settings;
+                setCloudConsentNeeded(saved.settings.cloudSpeechConsent !== true);
+              }
+            }}>Save voice</button>
             <button className="ghost" onClick={async () => { await window.companion.voiceSpeak('This is how I will sound when I talk with you.'); }}>Test voice</button>
           </div>
         </div>
@@ -823,82 +1130,107 @@ export default function App() {
       </aside>
 
       <main className="main">
+        <button className="mobile-nav-toggle ghost" onClick={() => setNavOpen((value) => !value)}>
+          {navOpen ? 'Hide menu' : 'Menu'}
+        </button>
         {error && <div className="banner error">{error}</div>}
         {status && <div className="banner success">{status}</div>}
         {tab === 'setup' && (
           <div className="content-grid">
-            <section className="card hero">
-              <div className="eyebrow">Welcome</div>
-              <h1>Set up Companion in minutes</h1>
+            <section className="card hero voice-guide-hero">
+              <div className="eyebrow">Companion</div>
+              <h1>{guideActive ? 'I will guide you by voice' : 'Talk first. Type only when you want to.'}</h1>
               <p className="lede">
-                Run a quick system check, choose a privacy preset, then connect one or more AI providers.
-                Companion can switch providers automatically when one is unavailable.
+                {guideActive
+                  ? 'I speak each step aloud. Answer out loud once cloud speech is on, or type below. We will set your details, my preferences, privacy, and speech.'
+                  : 'Connect a provider, enable cloud speech, then speak naturally. Companion listens on this PC, answers aloud, and only claims OS actions it can observe.'}
               </p>
-              <div className="actions">
-                <button onClick={runOnboarding} disabled={busy}>Run onboarding</button>
-                <button className="ghost" onClick={() => setTab('chat')} disabled={busy}>Open chat</button>
-              </div>
+              {guideActive ? (
+                <div className="voice-guide">
+                  <div className="voice-guide-progress" aria-hidden="true">
+                    <div
+                      className="voice-guide-progress-bar"
+                      style={{ width: `${Math.round(((voiceGuideStepIndex(voiceGuide.currentStep) + 1) / voiceGuideSteps.length) * 100)}%` }}
+                    />
+                  </div>
+                  <div className="muted">
+                    Step {voiceGuideStepIndex(voiceGuide.currentStep) + 1} of {voiceGuideSteps.length} · {getVoiceGuideStep(voiceGuide.currentStep).title}
+                  </div>
+                  <p className="voice-guide-prompt">{guidePrompt || getVoiceGuideStep(voiceGuide.currentStep).prompt}</p>
+                  <div className="composer voice-guide-composer">
+                    <textarea
+                      aria-label="Onboarding answer"
+                      placeholder={getVoiceGuideStep(voiceGuide.currentStep).hint}
+                      value={guideAnswer}
+                      onChange={(e) => setGuideAnswer(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' && !e.shiftKey) {
+                          e.preventDefault();
+                          void submitVoiceGuideAnswer(guideAnswer || 'continue');
+                        }
+                      }}
+                    />
+                    <button
+                      className="primary"
+                      onClick={() => void submitVoiceGuideAnswer(guideAnswer || 'continue')}
+                      disabled={busy || speaking}
+                    >
+                      Continue
+                    </button>
+                  </div>
+                  <div className="actions">
+                    {voiceGuide.draft.cloudSpeechConsent && stored.length > 0 && !voiceMode && (
+                      <button onClick={() => void startListening()} disabled={muted}>Start listening for answers</button>
+                    )}
+                    {voiceMode && <button className="danger" onClick={stopListening}>Pause listening</button>}
+                    <button className="ghost" onClick={() => void speakReply(guidePrompt || getVoiceGuideStep(voiceGuide.currentStep).prompt)}>Hear again</button>
+                  </div>
+                  {voiceGuide.currentStep === 'provider' && (
+                    <p className="muted">Scroll to “Connect an AI provider”, save a Gemini key, then continue here.</p>
+                  )}
+                </div>
+              ) : (
+                <div className="actions">
+                  <button className="primary" onClick={() => void startVoiceOnboarding()} disabled={busy}>Start voice onboarding</button>
+                  <button className="ghost" onClick={() => setTab('chat')} disabled={busy}>Start talking</button>
+                  <button className="ghost" onClick={runOnboarding} disabled={busy}>Run system check only</button>
+                </div>
+              )}
             </section>
 
             <section className="card">
               <div className="section-head">
                 <h3>Onboarding state</h3>
-                <span className="muted">{onboarding?.currentStep ? `Current: ${onboarding.currentStep}` : onboarding?.completedAt ? 'Completed' : 'Not started'}</span>
+                <span className="muted">
+                  {guideActive
+                    ? `Voice guide: ${getVoiceGuideStep(voiceGuide.currentStep).title}`
+                    : onboarding?.currentStep ? `Current: ${onboarding.currentStep}` : onboarding?.completedAt || voiceGuide.completedAt ? 'Completed' : 'Not started'}
+                </span>
               </div>
-              {!onboarding ? (
-                <p className="muted">No onboarding run yet. Click “Run onboarding” to check your system and choose a privacy preset.</p>
-              ) : (
-                <div className="saved-list">
-                  <div className="saved-item">
-                    <span>Overall status</span>
-                    <span>{onboarding.completedAt ? 'Completed' : onboarding.currentStep ? 'In progress' : 'Not started'}</span>
-                  </div>
-                  {onboarding.preset && (
-                    <div className="saved-item">
-                      <span>Privacy preset</span>
-                      <span>{onboarding.preset}</span>
-                    </div>
-                  )}
-                  {onboarding.startedAt && (
-                    <div className="saved-item">
-                      <span>Started</span>
-                      <span>{new Date(onboarding.startedAt).toLocaleString()}</span>
-                    </div>
-                  )}
-                  {onboarding.completedAt && (
-                    <div className="saved-item">
-                      <span>Completed</span>
-                      <span>{new Date(onboarding.completedAt).toLocaleString()}</span>
-                    </div>
-                  )}
-                  {Object.keys(onboarding.completed || {}).length > 0 && (
-                    <div>
-                      <div className="field-label" style={{ marginBottom: 8 }}>Completed steps</div>
-                      <div className="saved-list">
-                        {Object.entries(onboarding.completed).map(([key, value]: any) => (
-                          <div key={key} className="saved-item">
-                            <span>{key.replace(/-/g, ' ')}</span>
-                            <span>{value?.outcome ?? 'completed'}{value?.timestamp ? ` · ${new Date(value.timestamp).toLocaleString()}` : ''}</span>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                  {Object.keys(onboarding.failed || {}).length > 0 && (
-                    <div>
-                      <div className="field-label" style={{ marginBottom: 8 }}>Failed steps</div>
-                      <div className="saved-list">
-                        {Object.entries(onboarding.failed).map(([key, value]: any) => (
-                          <div key={key} className="saved-item">
-                            <span>{key.replace(/-/g, ' ')}</span>
-                            <span>{value?.error ?? value?.outcome ?? 'failed'}</span>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
+              <div className="saved-list">
+                <div className="saved-item">
+                  <span>Voice guide</span>
+                  <span>{voiceGuide.completedAt ? 'Completed' : guideActive ? 'In progress' : 'Not started'}</span>
                 </div>
-              )}
+                {(onboarding?.preset || voiceGuide.draft.privacyPreset) && (
+                  <div className="saved-item">
+                    <span>Privacy preset</span>
+                    <span>{onboarding?.preset || voiceGuide.draft.privacyPreset}</span>
+                  </div>
+                )}
+                {voiceGuide.draft.ownerName && (
+                  <div className="saved-item">
+                    <span>Owner</span>
+                    <span>{voiceGuide.draft.ownerName}</span>
+                  </div>
+                )}
+                {voiceGuide.draft.companionName && (
+                  <div className="saved-item">
+                    <span>Companion name</span>
+                    <span>{voiceGuide.draft.companionName}</span>
+                  </div>
+                )}
+              </div>
             </section>
 
             <section className="card">
@@ -1039,39 +1371,57 @@ export default function App() {
             </aside>
 
             <section className="chat-main">
-              <div className={voiceMode ? 'voice-panel listening' : 'voice-panel'}>
-                <div className="voice-status">
-                  <span className={voiceMode ? 'voice-dot live' : 'voice-dot'} aria-hidden="true" />
-                  <div>
-                    <strong>{voiceMode ? (speaking ? 'Companion is speaking' : voiceState === 'processing' ? 'Thinking about what you said' : voiceState === 'starting' ? 'Opening the microphone' : 'Listening live') : 'Live voice is off'}</strong>
-                    <div className="muted">{voiceMode ? `Microphone active · ${voiceEngine === 'winrt' ? 'Windows speech recognition' : voiceEngine === 'sapi' ? 'Windows offline recognizer' : 'speech engine'} · raw audio is not recorded` : 'Start this only when you want the microphone active'}</div>
+              <div className={`voice-panel ${voiceMode ? 'listening' : ''} ${speaking ? 'speaking' : ''} ${voiceState === 'processing' ? 'thinking' : ''}`}>
+                <div className="voice-hero">
+                  <div className={`voice-orb ${voiceMode ? 'live' : ''} ${speaking ? 'speak' : ''}`} aria-hidden="true">
+                    <span className="voice-orb-ring" />
+                    <span className="voice-orb-core" />
+                  </div>
+                  <div className="voice-status">
+                    <strong className="voice-headline">
+                      {voiceMode
+                        ? (speaking ? 'Companion is speaking' : voiceState === 'processing' ? 'Thinking about what you said' : voiceState === 'starting' ? 'Opening the microphone' : 'Listening live')
+                        : cloudConsentNeeded ? 'Voice needs your OK' : 'Live voice is off'}
+                    </strong>
+                    <div className="muted">
+                      {voiceMode
+                        ? `Microphone active · ${voiceEngine === 'gemini' ? 'Google Gemini transcription' : `${voiceEngine} engine`} · raw audio is not stored`
+                        : cloudConsentNeeded
+                          ? 'Short speech clips are transcribed by Google Gemini. Nothing is saved as an audio file on this PC.'
+                          : 'Speech is the primary way to talk with Companion. Text is always available.'}
+                    </div>
                   </div>
                 </div>
                 <div className="voice-actions">
+                  {cloudConsentNeeded && !voiceMode && (
+                    <button className="primary" onClick={() => void enableCloudSpeech()} disabled={!activeConv || muted || !stored.length}>
+                      Enable cloud speech
+                    </button>
+                  )}
                   {voiceMode
                     ? <button className="danger" onClick={stopListening}>Pause listening</button>
-                    : <button onClick={() => void startListeningRef.current()} disabled={!activeConv || muted}>Start listening</button>}
+                    : !cloudConsentNeeded && <button onClick={() => void startListeningRef.current()} disabled={!activeConv || muted}>Start listening</button>}
                   <button onClick={() => void toggleMute()}>{muted ? 'Unmute' : 'Mute'}</button>
                   <button className="danger" onClick={() => void stopEverything()}>Stop everything</button>
                 </div>
                 <div className="living-indicator" aria-live="polite">
-                  <span className="pulse" /> {voiceMode ? 'Speak naturally. Say "stop" while I am talking if you want me to be quiet.' : 'Microphone off. Nothing is recorded.'}
+                  <span className="pulse" /> {voiceMode ? 'Speak naturally. Say "stop" while I am talking if you want me to be quiet.' : 'Microphone off.'}
                 </div>
                 {calibrationQuestion && <div className="voice-transcript">Setup {calibrationStep ? `(${calibrationStep})` : ''}: {calibrationQuestion}</div>}
                 {interimTranscript && <div className="voice-transcript" aria-live="polite">{interimTranscript}</div>}
-                {voiceWarning && <div className="voice-error" role="status">{voiceWarning}</div>}
+                {voiceWarning && <div className="voice-consent" role="status">{voiceWarning}</div>}
                 {voiceError && <div className="voice-error" role="alert">{voiceError}</div>}
                 {speechPrivacyNeeded && (
-                  <button className="ghost" onClick={() => void window.companion.openSettings('ms-settings:privacy-speech')}>
-                    Open Windows speech privacy settings
+                  <button className="ghost" onClick={() => void window.companion.openSettings('ms-settings:privacy-microphone')}>
+                    Open Windows microphone privacy settings
                   </button>
                 )}
               </div>
               <div className="messages">
                 {messages.length === 0 && (
                   <div className="empty-state">
-                    <h3>Start a conversation</h3>
-                    <p>Create a new chat and send a message. Your connected provider will respond.</p>
+                    <h3>Say something</h3>
+                    <p>Enable listening and speak. Text is available below if you need it.</p>
                   </div>
                 )}
                 {messages.map((m: any) => (
@@ -1083,13 +1433,25 @@ export default function App() {
                 {pendingAction && (
                   <div className="confirmation-card" role="alertdialog" aria-label="Confirmation required">
                     <h4>Confirm action</h4>
-                    <p><strong>{pendingAction.toolName}</strong></p>
-                    <pre>{JSON.stringify(pendingAction.input, null, 2)}</pre>
+                    {pendingAction.toolName === 'os.call' ? (
+                      <p className="confirmation-readback">
+                        Call <strong>{pendingAction.input?.number}</strong>? This opens the dialer or Phone Link. I will not claim the call connected.
+                      </p>
+                    ) : pendingAction.toolName === 'os.whatsappSend' ? (
+                      <p className="confirmation-readback">
+                        Message <strong>{pendingAction.input?.contact}</strong>: “{pendingAction.input?.message}”. I only mark it sent if I observe it in the chat window.
+                      </p>
+                    ) : (
+                      <>
+                        <p><strong>{pendingAction.toolName}</strong></p>
+                        <pre>{JSON.stringify(pendingAction.input, null, 2)}</pre>
+                      </>
+                    )}
                     <div className="confirmation-actions">
-                      <button onClick={() => void confirmPendingAction()} disabled={busy}>Confirm</button>
+                      <button className="primary" onClick={() => void confirmPendingAction()} disabled={busy}>Confirm</button>
                       <button className="danger" onClick={() => void rejectPendingAction()} disabled={busy}>Cancel</button>
                     </div>
-                    <p className="muted">Nothing changes until you confirm. Messaging is never marked Sent without observation.</p>
+                    <p className="muted">Nothing changes until you confirm.</p>
                   </div>
                 )}
               </div>
@@ -1098,7 +1460,7 @@ export default function App() {
                 <textarea
                   value={draft}
                   onChange={(e) => setDraft(e.target.value)}
-                  placeholder={activeConv ? 'Type a message…' : 'Create or select a chat first'}
+                  placeholder={activeConv ? 'Or type if you prefer…' : 'Create or select a chat first'}
                   disabled={!activeConv || busy}
                   onKeyDown={(e) => {
                     if (e.key === 'Enter' && !e.shiftKey) {
@@ -1108,6 +1470,7 @@ export default function App() {
                   }}
                 />
                 <button onClick={sendDraft} disabled={!activeConv || busy || !draft.trim()}>Send</button>
+                <div className="composer-hint">Speech is primary. Text is a backup.</div>
               </div>
             </section>
           </div>

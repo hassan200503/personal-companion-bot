@@ -39,8 +39,8 @@ Baseline evidence: `docs/VERIFICATION_LOG.md` section 14. Safety-slice evidence:
 | --- | --- | --- | --- |
 | V1 | Greeting uses stored name and pronunciation, offline | PARTIAL | Composer is integrated into the renderer and tested for name, pronunciation SSML, variation, mute and quiet hours; WinRT spoke the greeting audibly (`speech_started`/`speech_done`), but editable pronunciation remains open. |
 | V2 | Greeting never delays startup | PARTIAL | Greeting runs after `loadAll`/owner load and is not awaited; manual CDP smoke showed the UI ready before speech began, but no timed startup measurement. |
-| V3 | Barge-in works | PARTIAL | While speaking, final/interim voice input can issue stop commands and the UI/global emergency stop calls `voiceStopSpeaking`; no automated microphone test. |
-| V4 | Listening pauses while speaking | PARTIAL | The recognizer keeps running for stop commands, but non-interrupt transcripts are ignored while speaking and for 1.2 s after TTS ends; no automated echo test. |
+| V3 | Barge-in works | PARTIAL | Capture pauses during TTS; spoken stop/quiet interrupts call `voiceStopSpeaking`; unit coverage exists, live mic timing still manual. |
+| V4 | Listening pauses while speaking | PARTIAL | `VoiceCapture.pause/resume` around TTS plus 1.2 s post-TTS ignore; Gemini cloud ASR is the conversation path with consent. |
 | V5 | Wake word on-device, memory buffer only | BLOCKED | G1. Current code uses Chat-tab auto-start or explicit start, not a wake word. |
 | V6 | No raw audio on disk (scan) | PARTIAL | The helper streams recognition events and the app writes no audio file; no automated raw-audio scan exists. |
 | V7 | Mute stops capture | PARTIAL | Mute calls `voiceStop` and stops active TTS in the renderer; the preference is not persisted and main-process TTS is not persistently gated. |

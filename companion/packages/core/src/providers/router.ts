@@ -9,6 +9,8 @@ import type {
   ChatCompletionRequest,
   ChatCompletionResponse,
   ChatCompletionChunk,
+  AudioTranscriptionRequest,
+  AudioTranscriptionResult,
 } from './contracts.js';
 import { ProviderError } from './contracts.js';
 
@@ -275,6 +277,28 @@ export class ProviderRouter {
     }
 
     return null;
+  }
+
+  async transcribe(
+    request: AudioTranscriptionRequest,
+    signal: AbortSignal
+  ): Promise<AudioTranscriptionResult> {
+    let lastError: Error | undefined;
+    for (const rp of this.getProviders()) {
+      if (!rp.provider.transcribe) continue;
+      const breaker = this.circuitBreakers.get(rp.provider.id);
+      if (breaker?.isOpen()) continue;
+      try {
+        return await rp.provider.transcribe(request, signal);
+      } catch (error) {
+        lastError = error instanceof Error ? error : new Error(String(error));
+        breaker?.recordFailure();
+        if (error instanceof ProviderError && !error.retryable) break;
+      }
+    }
+    throw lastError instanceof ProviderError
+      ? lastError
+      : new ProviderError('bad_request', 'No connected provider supports speech transcription.', false, undefined, lastError);
   }
 
   async complete(

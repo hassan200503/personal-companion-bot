@@ -296,7 +296,9 @@ public static class CompanionVoice
                 (sender, eventArgs) =>
                 {
                     var result = eventArgs.Result;
-                    if (result == null || string.IsNullOrWhiteSpace(result.Text)) return;
+                    if (result == null) return;
+                    Emit("{\"event\":\"result_status\",\"status\":\"" + result.Status + "\"}");
+                    if (string.IsNullOrWhiteSpace(result.Text)) return;
                     Emit("{\"event\":\"result\",\"text\":\"" + Esc(result.Text) + "\",\"confidence\":\"" + result.Confidence + "\"}");
                 }));
         AddEventHandler(
@@ -318,6 +320,24 @@ public static class CompanionVoice
                 (sender, eventArgs) =>
                 {
                     Emit("{\"event\":\"completed\",\"status\":\"" + eventArgs.Status + "\"}");
+                }));
+        AddEventHandler(
+            typeof(SpeechRecognizer),
+            recognizer,
+            "StateChanged",
+            new Windows.Foundation.TypedEventHandler<SpeechRecognizer, SpeechRecognizerStateChangedEventArgs>(
+                (sender, eventArgs) =>
+                {
+                    Emit("{\"event\":\"recognizer_state\",\"state\":\"" + eventArgs.State + "\"}");
+                }));
+        AddEventHandler(
+            typeof(SpeechRecognizer),
+            recognizer,
+            "RecognitionQualityDegrading",
+            new Windows.Foundation.TypedEventHandler<SpeechRecognizer, SpeechRecognitionQualityDegradingEventArgs>(
+                (sender, eventArgs) =>
+                {
+                    Emit("{\"event\":\"quality\",\"problem\":\"" + eventArgs.Problem + "\"}");
                 }));
         try
         {

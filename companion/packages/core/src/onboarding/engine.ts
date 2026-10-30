@@ -188,6 +188,11 @@ export class DefaultOnboardingEngine implements OnboardingEngine {
     await this.persistState();
   }
 
+  async setPreset(preset: 'recommended' | 'privacy-first' | 'minimal'): Promise<void> {
+    this.state.preset = preset;
+    await this.persistState();
+  }
+
   private async executeStep(
     step: SetupStep,
     ctx: StepContext

@@ -35,6 +35,8 @@ describe('normalizeVoiceSettings', () => {
     expect(settings.handsFree).toBe(true);
     expect(settings.bargeIn).toBe(true);
     expect(defaultVoiceSettings.muted).toBe(false);
+    expect(defaultVoiceSettings.cloudSpeechConsent).toBe(false);
+    expect(normalizeVoiceSettings({ cloudSpeechConsent: true }).cloudSpeechConsent).toBe(true);
   });
 
   it('normalizes recent greetings so they cannot grow unbounded', () => {

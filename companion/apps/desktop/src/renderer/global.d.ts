@@ -34,6 +34,9 @@ declare global {
       setStartup(enabled: boolean): Promise<any>;
       onboardingGetState(): Promise<any>;
       onboardingRun(): Promise<any>;
+      onboardingSetPreset(preset: string): Promise<any>;
+      onboardingGetVoiceGuide(): Promise<any>;
+      onboardingSetVoiceGuide(progress: unknown): Promise<any>;
       chatListConversations(): Promise<any[]>;
       chatCreateConversation(title?: string): Promise<any>;
       chatGetConversation(id: string): Promise<any>;
@@ -55,6 +58,7 @@ declare global {
         osRejectTool(actionHash: string): Promise<any>;
         voiceStart(): Promise<any>;
         voiceStop(): Promise<any>;
+        voiceTranscribe(audio: string, mimeType: string): Promise<any>;
         voiceSpeak(text: string): Promise<any>;
         voiceListVoices(): Promise<any>;
         personaGet(): Promise<any>;

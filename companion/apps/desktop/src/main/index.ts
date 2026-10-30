@@ -41,6 +41,7 @@ import {
   EmergencyStop,
   normalizeVoiceSettings,
   normalizePersonaState,
+  normalizeVoiceGuideProgress,
   type CalibrationStepId,
   type VoiceSettings,
 } from "@companion/core";
@@ -501,6 +502,36 @@ function registerIpc(): void {
     return { state: await onboardingEngine.getState(), logs };
   });
 
+  ipcMain.handle(ipcChannels.onboardingSetPreset, async (event, suppliedToken: unknown, preset: unknown): Promise<unknown> => {
+    assertTrustedSender(event, suppliedToken);
+    if (!onboardingEngine) throw new Error("Onboarding unavailable");
+    const allowed = ['recommended', 'privacy-first', 'minimal'] as const;
+    if (!allowed.includes(preset as typeof allowed[number])) {
+      return { ok: false, error: 'Invalid privacy preset.' };
+    }
+    await onboardingEngine.setPreset(preset as typeof allowed[number]);
+    return { ok: true, state: await onboardingEngine.getState() };
+  });
+
+  ipcMain.handle(ipcChannels.onboardingGetVoiceGuide, (event, suppliedToken: unknown): unknown => {
+    assertTrustedSender(event, suppliedToken);
+    try {
+      const row = companionDatabase?.raw.prepare('SELECT value FROM settings WHERE key = ?').get('onboarding.voiceGuide') as { value?: string } | undefined;
+      return normalizeVoiceGuideProgress(row?.value ? JSON.parse(row.value) : {});
+    } catch {
+      return normalizeVoiceGuideProgress({});
+    }
+  });
+
+  ipcMain.handle(ipcChannels.onboardingSetVoiceGuide, (event, suppliedToken: unknown, progress: unknown): unknown => {
+    assertTrustedSender(event, suppliedToken);
+    const normalized = normalizeVoiceGuideProgress(progress);
+    companionDatabase?.raw.prepare(
+      'INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at'
+    ).run('onboarding.voiceGuide', JSON.stringify(normalized), new Date().toISOString());
+    return { ok: true, progress: normalized };
+  });
+
   ipcMain.handle(ipcChannels.chatListConversations, async (event, suppliedToken: unknown): Promise<unknown[]> => {
     assertTrustedSender(event, suppliedToken);
     if (!conversationEngine) throw new Error("Chat unavailable");
@@ -780,6 +811,37 @@ function registerIpc(): void {
     return voiceService ? voiceService.stop() : { stopped: false };
   });
 
+  ipcMain.handle(ipcChannels.voiceTranscribe, async (event, suppliedToken: unknown, audio: unknown, mimeType: unknown): Promise<unknown> => {
+    assertTrustedSender(event, suppliedToken);
+    const settings = readVoiceSettings();
+    if (!settings.cloudSpeechConsent) {
+      return { ok: false, error: 'Cloud speech is off. Enable Gemini speech transcription in Voice settings first.' };
+    }
+    if (!providerRouter) return { ok: false, error: 'Connect a speech-capable provider (Gemini) before using live voice.' };
+    if (typeof audio !== 'string' || audio.length < 100 || audio.length > 8_000_000) {
+      return { ok: false, error: 'The speech clip was empty or too large.' };
+    }
+    const allowedTypes = new Set(['audio/wav', 'audio/webm', 'audio/ogg', 'audio/mp4']);
+    if (typeof mimeType !== 'string' || !allowedTypes.has(mimeType)) {
+      return { ok: false, error: 'Unsupported speech audio format.' };
+    }
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 30_000);
+    try {
+      const result = await providerRouter.transcribe({ audio, mimeType, language: settings.language }, controller.signal);
+      logger.info('speech transcription completed', { characters: result.text.length, model: result.model ?? 'unknown' });
+      return { ok: true, text: result.text, model: result.model };
+    } catch (error) {
+      const message = error instanceof Error && error.name === 'AbortError'
+        ? 'Speech transcription timed out.'
+        : error instanceof Error ? error.message : 'Speech transcription failed.';
+      logger.warn('speech transcription failed', { message });
+      return { ok: false, error: message };
+    } finally {
+      clearTimeout(timer);
+    }
+  });
+
   ipcMain.handle(ipcChannels.voiceStopSpeaking, (event, suppliedToken: unknown): unknown => {
     assertTrustedSender(event, suppliedToken);
     return voiceService ? voiceService.stopSpeaking() : stopSpeaking();
@@ -991,7 +1053,7 @@ function registerIpc(): void {
             providerRouter.complete({
           model: defaultModel,
           messages: [
-            { role: 'system', content: 'You are an OS control router. Map the user command to one tool. Respond ONLY with JSON: {"tool": "<toolname or none>", "input": {}}. Tools: os.open(target), os.play(target), os.speak(text), os.call(number), os.run(command), os.screenshot(), os.camera(mode), os.photo(), os.video(seconds), os.whatsappSend(contact,message). If no OS action, tool="none".' },
+            { role: 'system', content: 'You are an OS control router. Map the user command to one tool. Respond ONLY with JSON: {"tool": "<toolname or none>", "input": {}}. Tools: os.open(target), os.play(target), os.speak(text), os.call(number_or_contact_name), os.run(command), os.screenshot(), os.camera(mode), os.photo(), os.video(seconds), os.whatsappSend(contact,message). For calls put the spoken name or number in input.number. Never invent success. If no OS action, tool="none".' },
             { role: 'user', content: trimmed },
           ],
           temperature: 0,

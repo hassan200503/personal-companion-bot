@@ -105,6 +105,24 @@ export interface ChatCompletionChunk {
   finishReason?: 'stop' | 'length' | 'content_filter' | 'tool_calls' | 'error';
 }
 
+/** Request to transcribe a short speech clip. Audio is base64-encoded inline data. */
+export interface AudioTranscriptionRequest {
+  /** Base64 audio bytes. */
+  audio: string;
+  /** MIME type such as audio/wav. */
+  mimeType: string;
+  /** Optional model override. */
+  model?: string;
+  /** Optional recognition language hint. */
+  language?: string;
+}
+
+/** Speech transcription result. */
+export interface AudioTranscriptionResult {
+  text: string;
+  model?: string;
+}
+
 /** Provider health status */
 export interface HealthStatus {
   /** Is provider operational */
@@ -154,6 +172,12 @@ export interface ChatProvider {
     request: ChatCompletionRequest,
     signal: AbortSignal
   ): AsyncIterable<ChatCompletionChunk>;
+
+  /** Optional speech-to-text support for providers that accept inline audio. */
+  transcribe?(
+    request: AudioTranscriptionRequest,
+    signal: AbortSignal
+  ): Promise<AudioTranscriptionResult>;
 }
 
 /** Provider factory function */

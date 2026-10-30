@@ -35,6 +35,8 @@ export * from './messaging/index.js';
 export * from './media/index.js';
 export * from './proactive/index.js';
 export * from './lifecycle/index.js';
+export * from './voice/audio.js';
+export * from './voice/segmenter.js';
 export * from './voice/greeting.js';
 export * from './voice/personality.js';
 export * from './voice/speech.js';

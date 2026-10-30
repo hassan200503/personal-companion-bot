@@ -148,6 +148,9 @@ export interface OnboardingEngine {
   
   /** Reset onboarding state (for testing) */
   reset(): Promise<void>;
+
+  /** Persist the owner-selected privacy preset */
+  setPreset?(preset: 'recommended' | 'privacy-first' | 'minimal'): Promise<void>;
 }
 
 /** Storage interface for persisting onboarding state */

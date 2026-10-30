@@ -4,7 +4,7 @@
  * Static catalog of known AI providers with onboarding metadata.
  */
 
-import type { ProviderCatalogEntry, ChatProvider, ChatCompletionRequest, ChatCompletionResponse, ChatCompletionChunk, HealthStatus, ProviderCapabilities } from './contracts.js';
+import type { ProviderCatalogEntry, ChatProvider, ChatCompletionRequest, ChatCompletionResponse, ChatCompletionChunk, HealthStatus, ProviderCapabilities, AudioTranscriptionRequest, AudioTranscriptionResult } from './contracts.js';
 import { ProviderError } from './contracts.js';
 
 // -------------------------------------------------------------------
@@ -418,6 +418,31 @@ class GeminiProvider implements ChatProvider {
       finishReason: candidate?.finishReason === 'MAX_TOKENS' ? 'length' : 'stop',
       usage: data.usageMetadata ? { promptTokens: data.usageMetadata.promptTokenCount ?? 0, completionTokens: data.usageMetadata.candidatesTokenCount ?? 0, totalTokens: data.usageMetadata.totalTokenCount ?? 0 } : undefined,
     };
+  }
+
+  async transcribe(request: AudioTranscriptionRequest, signal: AbortSignal): Promise<AudioTranscriptionResult> {
+    const model = request.model ?? this.selectedModel ?? 'gemini-2.5-flash-lite';
+    const response = await fetch(`${this.endpoint(model)}:generateContent?key=${encodeURIComponent(this.apiKey)}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        contents: [{
+          role: 'user',
+          parts: [
+            { text: 'Transcribe the speech in this audio verbatim. Output only the transcript, with no quotation marks or commentary. If there is no intelligible speech, output an empty string.' },
+            { inlineData: { mimeType: request.mimeType, data: request.audio } }
+          ]
+        }],
+        generationConfig: { temperature: 0, maxOutputTokens: 800 }
+      }),
+      signal
+    });
+    if (!response.ok) throw classifyHttpError(response.status, await response.text(), response.headers.get('retry-after'));
+    const data = await response.json() as { candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }> };
+    const text = (data.candidates?.[0]?.content?.parts?.map((part) => part.text ?? '').join('') ?? '')
+      .replace(/^["'“”‘’]+|["'“”‘’]+$/g, '')
+      .trim();
+    return { text, model };
   }
 
   async *stream(request: ChatCompletionRequest, signal: AbortSignal): AsyncIterable<ChatCompletionChunk> {

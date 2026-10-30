@@ -3,7 +3,7 @@
 Last updated: 2026-10-30
 Brief: `docs/AGENT_BRIEF.md` (v3 master brief, adopted 2026-10-29). The previous handoff brief is archived at `docs/archive/AGENT_BRIEF-v1-handoff.md`.
 Current milestone: M1 voice-first companion slice
-Status: Core hardening advanced: browser-safe greeting/safe-speech integration, ranked media, fixture messaging, proactive policy, proposal-only learning, live typed cognition, persona regression coverage, reusable UIA probing, integrity probing, persisted startup controls, single-instance lock, heartbeat/marker protocol, detached capped supervisor, emergency-stop wiring, postcondition enforcement, durable capability observation tracking, immutable policy bundle, clipboard restoration helper and rejection lookup are implemented. The companion now has a compiled Windows speech helper, WinRT speech with SAPI fallback, live voice conversation wiring, persona calibration and model-backed proactive questions. Latest full verify passes 42 files / 286 tests and the NSIS installer was rebuilt with the voice helper. Real WinRT microphone recognition remains blocked by the Windows speech privacy setting; SAPI fallback quality is poor. Runtime GUI E2E and several production adapters remain open.
+Status: Speech-first production slice (scope B) is in tree: renderer mic + VAD → Gemini transcription (consent-gated), WinRT helper TTS-only, hardened call/WhatsApp/media honesty, voice-first UI, and a spoken voice-guided onboarding flow that collects owner details, bot preferences, privacy preset and cloud-speech consent. Latest full verify: 44 files / 297 tests. Email, wake word, and signed/clean-machine install remain out of scope.
 
 ## What this project is
 
@@ -35,9 +35,11 @@ The legacy bot is separate and must not be changed or restarted without the owne
 - WhatsApp returns typed/sent/verified honestly; no "Sent" claim without observation.
 - `playMedia` opens the official search page instead of scraping HTML.
 - Startup greeting with owner name and time of day; explicit Start listening instead of auto-dictation.
-- Voice-first desktop slice: compiled `CompanionVoice.exe` bundled under `resources/voice`, WinRT synthesis/recognition with SAPI fallback, audible spoken replies, visible mic state, mute/quiet hours, start/stop and stop-speaking controls.
-- Persona slice: persisted tone/name/boundaries calibration, companion prompt injection on every chat turn, voice calibration answers, and model-backed proactive questions with quiet hours, daily cap and offline fallback.
-- Packaged runtime evidence: the unpacked app auto-started the bundled voice helper from `resources/voice` after the Chat tab opened; the helper was terminated with the app tree.
+- Voice-first desktop slice: compiled `CompanionVoice.exe` for TTS; live listening via `VoiceCapture` + Gemini `transcribe` with persisted `cloudSpeechConsent`; echo guard pauses capture during TTS.
+- OS honesty: `os.call` supports tel digits or contact/Phone Link search; WhatsApp observes outgoing bubbles before `sent/verified`; media prefers ranked local play and honest YouTube search fallback.
+- Voice-guided onboarding: bot speaks setup steps; owner sets name/phone/dob, companion name/tone/boundaries, privacy preset, cloud speech, and Gemini provider before chat.
+- Persona slice: persisted tone/name/boundaries, companion prompt injection, and model-backed proactive questions with quiet hours/daily cap.
+- Packaged runtime evidence: prior installer smoke verified bundled helper TTS; rebuild pending after this slice.
 
 ## Safety slice status
 
@@ -47,7 +49,7 @@ The legacy bot is separate and must not be changed or restarted without the owne
 4. FIXED: YouTube HTML scraping removed.
 5. PARTIAL: lock/secure desktop and sensitive-target guard; no real integrity-level probe.
 6. PARTIAL: greeting is composed, respects mute/quiet hours and was audibly spoken through WinRT; pronunciation overrides and startup-latency measurement remain open.
-7. PARTIAL: visible mic state, explicit pause/mute and Chat-tab auto-start exist; no wake word (G1), and mute is not persisted across restarts.
+7. PARTIAL: visible mic state, consent-gated Gemini listen, persisted mute/consent; no wake word (G1).
 
 ## Open critical work
 
@@ -62,7 +64,7 @@ The legacy bot is separate and must not be changed or restarted without the owne
 | Item | Reason | Unblock condition |
 | --- | --- | --- |
 | Wake word / always-listening default (SC6, V5) | G1 requires owner approval for on-device speech models and always-listening | Owner answers G1 |
-| Live WinRT microphone recognition (V3/V4/V6) | Windows speech privacy has not been accepted, so `SpeechRecognizer` fails with `speech_privacy`; the app falls back to low-accuracy SAPI | Owner enables Settings > Privacy & security > Speech, then speaks during a live test |
+| Local-only / wake-word ASR (V5) | Unpackaged WinRT recognition needs package identity; replaced for conversation by Gemini cloud ASR with consent | G1 for on-device models; owner enables cloud speech + Gemini key for current path |
 | Vision fallback / screenshots leaving the PC (O8) | G2 | Owner answers G2 |
 | Real WhatsApp sending and account risk (SC4, G3) | G3 | Owner answers G3 and provides a test account |
 | UIA/elevated control beyond standard user (G4) | G4 | Owner answers G4 |
@@ -70,9 +72,9 @@ The legacy bot is separate and must not be changed or restarted without the owne
 
 ## Next three tasks
 
-1. Run a live WinRT microphone test after the owner enables Windows speech privacy; verify recognition, calibration answers, barge-in/stop, quiet hours and no raw-audio files.
+1. Live packaged smoke: voice onboarding → cloud speech consent → spoken utterance → transcript → spoken reply; confirm no raw audio files.
 2. Wire every screen/audio/file producer to `routeExternalContent`, then add an Electron E2E test for confirmation/denial/locked screen.
-3. Integrate the reusable UIA probe/capability store with typed adapters and a measured 10-task benchmark.
+3. Optional email (Outlook) and local ASR/wake word after owner gates.
 
 ## Commands that work
 

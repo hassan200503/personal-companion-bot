@@ -69,13 +69,18 @@ export function createOsSpeakTool(): ToolDefinition<{ text: string; voice?: stri
   };
 }
 
-export function createOsCallTool(): ToolDefinition<{ number: string }, { initiated: boolean }> {
+export function createOsCallTool(): ToolDefinition<{ number: string }, { initiated: boolean; mode?: string; display?: string; error?: string }> {
   return {
     name: 'os.call',
-    version: '1.0.0',
-    description: 'Initiate a phone call to a number using the default dialer.',
-    inputSchema: z.object({ number: z.string().min(3) }),
-    outputSchema: z.object({ initiated: z.boolean() }),
+    version: '1.1.0',
+    description: 'Open the dialer for a phone number, or Phone Link / People search for a contact name. Never claims the call connected.',
+    inputSchema: z.object({ number: z.string().min(2) }),
+    outputSchema: z.object({
+      initiated: z.boolean(),
+      mode: z.string().optional(),
+      display: z.string().optional(),
+      error: z.string().optional()
+    }),
     requiredPermissions: ['os.telephony'],
     dataClassification: 'personal',
     riskClass: 3,
@@ -87,7 +92,7 @@ export function createOsCallTool(): ToolDefinition<{ number: string }, { initiat
     platforms: ['all'],
     execute: async (_ctx, input) => {
       const r = await makeCall(input.number);
-      return { initiated: r.called };
+      return { initiated: r.called, mode: r.mode, display: r.display, error: r.error };
     },
   };
 }

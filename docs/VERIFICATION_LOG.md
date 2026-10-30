@@ -438,3 +438,10 @@ This proves the supervisor logic and fixture restart path, not a real crashed El
 | V-78 | CDP evaluation against the built app: open Chat, wait, read voice panel; call `personaProactive(null, [])`; inspect `%APPDATA%\\Companion\\logs\\companion.log`; repeat after the Gemini request fix | PASS after fix: Chat-tab auto-start reached `Listening live` and spawned `CompanionVoice`; the first proactive call returned `fallback` with a Gemini `INVALID_ARGUMENT` (`contents is not specified`); after adding an explicit user turn, the same call returned a model question (`What are we actually trying to get done today?`, source `model`). A typed chat turn also returned a provider reply. The test wrote one prompt into conversation `814f23b2-889a-40fc-9eb5-09a242dcb9e1`. |
 
 The live WinRT microphone path, real owner speech, barge-in timing and raw-audio scan remain unverified; V-75/V-78 prove TTS, helper startup, auto-start and model proactivity, not recognition quality.
+
+## 32. Speech-first + voice onboarding slice (2026-10-30)
+
+| ID | Command / inspection | Observed result |
+| --- | --- | --- |
+| V-79 | `npm.cmd run verify` from `companion/` | PASS: ESLint 0 errors / 0 warnings, TypeScript clean, 44 test files / 297 tests (includes voice-guide, audio/segmenter, cloud consent defaults), Electron main/preload/supervisor and Vite renderer builds completed. |
+| V-80 | Source inspection: `voice-capture.ts`, `voiceTranscribe` consent gate, `advanceVoiceGuide`, OS call/WhatsApp/media honesty | PASS by inspection: Gemini transcription requires `cloudSpeechConsent`; voice guide collects owner details + preferences + preset + speech consent; WhatsApp UIA observation and call name/tel paths present. Live CDP speech smoke and installer hash recorded after `npm run package`. |
