@@ -39,7 +39,7 @@ The legacy bot is separate and must not be changed or restarted without the owne
 - OS honesty: `os.call` supports tel digits or contact/Phone Link search; WhatsApp observes outgoing bubbles before `sent/verified`; media prefers ranked local play and honest YouTube search fallback.
 - Voice-guided onboarding: bot speaks setup steps; owner sets name/phone/dob, companion name/tone/boundaries, privacy preset, cloud speech, and Gemini provider before chat.
 - Persona slice: persisted tone/name/boundaries, companion prompt injection, and model-backed proactive questions with quiet hours/daily cap.
-- Packaged runtime evidence: prior installer smoke verified bundled helper TTS; rebuild pending after this slice.
+- Packaged runtime evidence: NSIS installer rebuilt after this slice (`Companion-0.1.0-x64.exe`, SHA-256 `E7F850384880EC5B915CCEFDBF47DC4B752AFB4B983F534B7EB54C3A167444E0`, V-81); prior unpacked smoke verified bundled helper TTS.
 
 ## Safety slice status
 
@@ -112,8 +112,8 @@ npm run package
 - WinRT microphone recognition is blocked by the Windows speech privacy setting on this machine; the SAPI fallback starts but misrecognized loopback TTS (for example, one token at 0.003 confidence), so it is not yet a usable conversation input.
 - The voice helper and build script are Windows-only and require the Windows SDK `Windows.winmd` at build time; the packaged app ships the compiled helper and falls back if it is missing.
 - Injection corpus covers seven external origins and classes 1-3; fixture messenger, ranked media, proactive and learning-policy tests now run. Desktop chat no longer copies conversation content into learning by default, but producer wiring, kill tests and soak remain open.
-- NSIS packaging produced `apps/desktop/release/Companion-0.1.0-x64.exe` (2026-10-30 SHA-256 `45CDA73F2673822628F1C736162789B017CF31768E8ABF05B8057CF4C7621EBF`), and packaged runtime/supervisor external-termination smokes passed in V-65/V-69 plus the new voice-helper smoke in V-77; the installer is unsigned, uses the default icon, and has not been installed on a clean machine; SmartScreen/uninstall/first-run remain unverified.
-- CI has not run on GitHub because the repository has not been pushed.
+- NSIS packaging produced `apps/desktop/release/Companion-0.1.0-x64.exe` (2026-10-30 SHA-256 `E7F850384880EC5B915CCEFDBF47DC4B752AFB4B983F534B7EB54C3A167444E0`, V-81), and packaged runtime/supervisor external-termination smokes passed in V-65/V-69 plus the voice-helper smoke in V-77; the installer is unsigned, uses the default icon, and has not been installed on a clean machine; SmartScreen/uninstall/first-run remain unverified.
+- `main` is pushed to GitHub; CI still has not been confirmed green on the remote.
 - Logger redaction does not cover secrets embedded in free-text messages or error strings.
 - Runtime memory and idle CPU were not measured.
 - Third-party MIT notices for bundled native packages are not in the package.

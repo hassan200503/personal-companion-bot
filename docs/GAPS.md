@@ -44,8 +44,8 @@ Status values: `FIXED` means code + verification exist for the stated slice; `PA
 
 | ID | Gap | Evidence | Dependency | Status |
 | --- | --- | --- | --- | --- |
-| GAP-21 | Installer unsigned and not clean-machine tested | Rebuilt NSIS artifact `Companion-0.1.0-x64.exe` (122,764,179 bytes, SHA-256 `45CDA73F...7621EBF`), unpacked runtime smoke and bundled-voice-helper smoke passed (V-77), but signing and clean-machine installation/uninstall/SmartScreen checks remain open. | Owner/VM/G4 | OPEN |
-| GAP-22 | CI has not run on GitHub | Repository not pushed. | Owner push decision | OPEN |
+| GAP-21 | Installer unsigned and not clean-machine tested | Rebuilt NSIS artifact `Companion-0.1.0-x64.exe` (122,781,868 bytes, SHA-256 `E7F85038...444E0`, V-81), prior unpacked runtime/helper smoke passed (V-77), but signing and clean-machine installation/uninstall/SmartScreen checks remain open. | Owner/VM/G4 | OPEN |
+| GAP-22 | CI has not run on GitHub | `main` pushed (`9516104`+); remote CI status not yet confirmed. | Owner/CI | OPEN |
 | GAP-23 | No third-party notices in packaged app | PROJECT_STATE known defects. | Release work | OPEN |
 
 ## Fix order
