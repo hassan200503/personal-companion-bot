@@ -3,6 +3,7 @@ import { existsSync, writeFileSync } from 'node:fs';
 import { createInterface } from 'node:readline';
 import { join } from 'node:path';
 import {
+  chunkSpeakable,
   isNoiseTranscript,
   normalizeVoiceSettings,
   parseVoiceEventLine,
@@ -243,6 +244,31 @@ export class VoiceService {
     if (!gate.ok) return { spoken: false, skipped: gate.reason };
     const safe = toSpeakable(text, { speakSafe: true, maxSentences: 3 });
     if (!safe) return { spoken: false, skipped: 'empty' };
+    return this.speakRaw(safe, settings);
+  }
+
+  /**
+   * Chunked WinRT read-aloud for research/email digests.
+   * Stops between chunks so barge-in (stopSpeaking) can interrupt cleanly.
+   */
+  async speakChunks(text: string, settingsInput: unknown): Promise<VoiceSpeakResult> {
+    const settings = normalizeVoiceSettings(settingsInput);
+    const gate = shouldSpeak(settings);
+    if (!gate.ok) return { spoken: false, skipped: gate.reason };
+    const chunks = chunkSpeakable(text, { sentencesPerChunk: 2, maxChunks: 10 });
+    if (chunks.length === 0) return { spoken: false, skipped: 'empty' };
+    let last: VoiceSpeakResult = { spoken: false };
+    for (const chunk of chunks) {
+      if (this.speakingProcess === null && last.spoken === false && last.interrupted) {
+        return { spoken: false, interrupted: true };
+      }
+      last = await this.speakRaw(chunk, settings);
+      if (!last.spoken || last.interrupted) return last;
+    }
+    return last;
+  }
+
+  private async speakRaw(safe: string, settings: VoiceSettings): Promise<VoiceSpeakResult> {
     this.stopSpeaking(false);
     this.tracker.beginSpeaking();
     this.emitState('speaking');
@@ -274,7 +300,7 @@ export class VoiceService {
       this.speakingProcess = child;
       let settled = false;
       let stderr = '';
-      const interrupted = false;
+      let wasInterrupted = false;
       const finish = (result: VoiceSpeakResult) => {
         if (settled) return;
         settled = true;
@@ -296,7 +322,7 @@ export class VoiceService {
           this.onEvent?.({ type: 'speech', state: 'started', engine: settings.engine === 'sapi' ? 'sapi' : 'winrt', voice: event.voice });
         } else if (event.type === 'speech_done') {
           this.onEvent?.({ type: 'speech', state: 'done' });
-          finish({ spoken: true });
+          finish({ spoken: true, interrupted: false });
         } else if (event.type === 'fallback') {
           // The helper already switched to System.Speech; keep going.
         } else if (event.type === 'error') {
@@ -307,14 +333,28 @@ export class VoiceService {
         stderr = `${stderr}${chunk.toString()}`.slice(-2000);
       });
       child.on('error', (error) => finish({ spoken: false, error: error.message }));
-      child.on('exit', (code) => {
+      child.on('exit', (code, signal) => {
         if (settled) return;
-        if (code === null || code === 0) {
-          finish({ spoken: true });
+        // stopSpeaking kills the child → treat as barge-in interrupt
+        if (wasInterrupted || this.speakingProcess !== child) {
+          finish({ spoken: false, interrupted: true });
+          return;
+        }
+        if (code === null || code === 0 || signal === 'SIGTERM') {
+          // SIGTERM without our interrupt flag still means external stop
+          if (signal) {
+            finish({ spoken: false, interrupted: true });
+            return;
+          }
+          finish({ spoken: true, interrupted: false });
         } else {
-          finish({ spoken: false, interrupted, error: stderr.trim() || `Speech helper exited with code ${code}.` });
+          finish({ spoken: false, interrupted: false, error: stderr.trim() || `Speech helper exited with code ${code}.` });
         }
       });
+      // Expose interrupt marker via weak map on process for stopSpeaking
+      (child as ChildProcess & { __companionInterrupted?: () => void }).__companionInterrupted = () => {
+        wasInterrupted = true;
+      };
     });
   }
 
@@ -322,6 +362,10 @@ export class VoiceService {
     const child = this.speakingProcess;
     this.speakingProcess = null;
     stopLegacySpeaking();
+    if (child) {
+      const marked = child as ChildProcess & { __companionInterrupted?: () => void };
+      marked.__companionInterrupted?.();
+    }
     if (emit) {
       this.tracker.markSpeakingDone();
       this.emitState(this.listener && !this.listener.stopping ? 'listening' : 'off', 'Speech interrupted.', 'interrupted');

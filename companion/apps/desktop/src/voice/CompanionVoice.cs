@@ -127,35 +127,80 @@ public static class CompanionVoice
         method.Invoke(instance, new object[] { handler });
     }
 
+    private static bool LooksNeural(VoiceInformation voice)
+    {
+        if (voice == null) return false;
+        var name = (voice.DisplayName ?? "") + " " + (voice.Id ?? "");
+        var lower = name.ToLowerInvariant();
+        return lower.Contains("neural") || lower.Contains("natural") || lower.Contains("online") || lower.Contains("onecore");
+    }
+
     private static SpeechSynthesizer FindVoice(string selector)
     {
         var synth = new SpeechSynthesizer();
-        if (string.IsNullOrWhiteSpace(selector)) return synth;
-        var wanted = selector.Trim();
+        if (!string.IsNullOrWhiteSpace(selector))
+        {
+            var wanted = selector.Trim();
+            foreach (var voice in SpeechSynthesizer.AllVoices)
+            {
+                if (string.Equals(voice.DisplayName, wanted, StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(voice.Id, wanted, StringComparison.OrdinalIgnoreCase) ||
+                    voice.DisplayName.IndexOf(wanted, StringComparison.OrdinalIgnoreCase) >= 0)
+                {
+                    synth.Voice = voice;
+                    return synth;
+                }
+            }
+            return synth;
+        }
+        // Prefer neural / online / OneCore voices when the owner left selector empty.
+        VoiceInformation preferred = null;
         foreach (var voice in SpeechSynthesizer.AllVoices)
         {
-            if (string.Equals(voice.DisplayName, wanted, StringComparison.OrdinalIgnoreCase) ||
-                string.Equals(voice.Id, wanted, StringComparison.OrdinalIgnoreCase) ||
-                voice.DisplayName.IndexOf(wanted, StringComparison.OrdinalIgnoreCase) >= 0)
+            var lang = (voice.Language ?? "").ToLowerInvariant();
+            if (!lang.StartsWith("en")) continue;
+            if (LooksNeural(voice))
             {
-                synth.Voice = voice;
-                return synth;
+                preferred = voice;
+                break;
             }
+            if (preferred == null) preferred = voice;
         }
+        if (preferred != null) synth.Voice = preferred;
         return synth;
     }
 
     private static byte[] BuildSsml(string text, int rate, int pitch, out string language)
     {
         language = "en-US";
-        var escaped = System.Security.SecurityElement.Escape(text);
         var ratePercent = (int)Math.Round((1.0 + rate / 10.0) * 100.0);
         if (ratePercent < 50) ratePercent = 50;
         if (ratePercent > 250) ratePercent = 250;
         var pitchPercent = (int)Math.Round((1.0 + pitch / 20.0) * 100.0);
         if (pitchPercent < 50) pitchPercent = 50;
         if (pitchPercent > 200) pitchPercent = 200;
-        var ssml = "<speak version=\"1.0\" xmlns=\"http://www.w3.org/2001/10/synthesis\" xml:lang=\"" + language + "\"><prosody rate=\"" + ratePercent + "%\" pitch=\"" + pitchPercent + "%\">" + escaped + "</prosody></speak>";
+        // Mild sentence-level pauses + slight pitch contour for more natural speech.
+        var parts = System.Text.RegularExpressions.Regex.Split(text ?? "", @"(?<=[\.!\?])\s+");
+        var body = new StringBuilder();
+        for (var i = 0; i < parts.Length; i++)
+        {
+            var sentence = (parts[i] ?? "").Trim();
+            if (sentence.Length == 0) continue;
+            var escaped = System.Security.SecurityElement.Escape(sentence);
+            var contour = (i % 2 == 0) ? pitchPercent : Math.Max(50, Math.Min(200, pitchPercent + 3));
+            body.Append("<prosody rate=\"").Append(ratePercent).Append("%\" pitch=\"").Append(contour).Append("%\">")
+                .Append(escaped)
+                .Append("</prosody>");
+            if (i < parts.Length - 1) body.Append("<break time=\"220ms\"/>");
+        }
+        if (body.Length == 0)
+        {
+            var escaped = System.Security.SecurityElement.Escape(text ?? "");
+            body.Append("<prosody rate=\"").Append(ratePercent).Append("%\" pitch=\"").Append(pitchPercent).Append("%\">")
+                .Append(escaped)
+                .Append("</prosody>");
+        }
+        var ssml = "<speak version=\"1.0\" xmlns=\"http://www.w3.org/2001/10/synthesis\" xml:lang=\"" + language + "\">" + body + "</speak>";
         return Encoding.UTF8.GetBytes(ssml);
     }
 

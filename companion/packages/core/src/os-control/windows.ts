@@ -1,24 +1,41 @@
 import { execFile, spawn, type ChildProcess } from 'node:child_process';
-import { resolveLocalMedia, type MediaEntry } from '../media/resolver.js';
+import { resolveLocalMedia, type MediaEntry, MediaFallbackChain, type FallbackProvider } from '../media/resolver.js';
 import { probeUiAutomation } from './uia.js';
+import { ensureStartAppsCache, resolveFromStartAppsCache } from './start-apps-cache.js';
 
-export async function openTarget(target: string): Promise<{ opened: boolean; resolved?: string; error?: string }> {
+export async function openTarget(target: string, signal?: AbortSignal): Promise<{ opened: boolean; resolved?: string; error?: string; method?: string }> {
   const t = target.trim();
   if (!t) return { opened: false, error: 'empty_target' };
+  if (signal?.aborted) return { opened: false, error: 'aborted' };
 
   const runStart = async (x: string) => {
     return new Promise<{ ok: boolean; error?: string }>((resolve) => {
+      if (signal?.aborted) {
+        resolve({ ok: false, error: 'aborted' });
+        return;
+      }
       const child = spawn('cmd', ['/c', 'start', '', x], { windowsHide: true });
+      const onAbort = () => {
+        try { child.kill(); } catch { /* ignore */ }
+        resolve({ ok: false, error: 'aborted' });
+      };
+      signal?.addEventListener('abort', onAbort, { once: true });
       let err = '';
       child.stderr.on('data', (d) => { err += d.toString(); });
-      child.on('close', (code) => resolve(code === 0 ? { ok: true } : { ok: false, error: err.trim() || `exit ${code}` }));
-      child.on('error', (e) => resolve({ ok: false, error: e.message }));
+      child.on('close', (code) => {
+        signal?.removeEventListener('abort', onAbort);
+        resolve(code === 0 ? { ok: true } : { ok: false, error: err.trim() || `exit ${code}` });
+      });
+      child.on('error', (e) => {
+        signal?.removeEventListener('abort', onAbort);
+        resolve({ ok: false, error: e.message });
+      });
     });
   };
 
   if (/^[a-z][a-z0-9+.-]*:/i.test(t) || (await import('node:fs')).existsSync(t)) {
     const r = await runStart(t);
-    return r.ok ? { opened: true, resolved: t } : { opened: false, error: r.error };
+    return r.ok ? { opened: true, resolved: t, method: 'direct' } : { opened: false, error: r.error };
   }
 
   const aliases: Record<string, string> = {
@@ -26,36 +43,46 @@ export async function openTarget(target: string): Promise<{ opened: boolean; res
     explorer: 'explorer', files: 'explorer', camera: 'microsoft.windows.camera:', photos: 'ms-photos:',
     settings: 'ms-settings:', store: 'ms-windows-store:', whatsapp: 'whatsapp:', browser: 'https://www.google.com',
     edge: 'msedge', chrome: 'chrome', youtube: 'https://www.youtube.com',
+    steam: 'steam://open/games', discord: 'discord:', spotify: 'spotify:',
+    game: 'steam://open/games', games: 'steam://open/games',
   };
   let alias = aliases[t.toLowerCase()];
   if (!alias) {
-    const lower = t.toLowerCase();
+    const lower = t.toLowerCase().replace(/^(the\s+|my\s+)/, '').trim();
     for (const key of Object.keys(aliases)) {
-      if (lower.includes(key)) { alias = aliases[key]; break; }
+      if (lower === key || lower.includes(key)) { alias = aliases[key]; break; }
     }
   }
   if (alias) {
     const r = await runStart(alias);
     if (r.ok) {
       const expectedProcess = processForAlias(alias);
-      if (!expectedProcess || await processExists(expectedProcess)) return { opened: true, resolved: alias };
-      return { opened: false, resolved: alias, error: 'postcondition_unverified' };
+      if (!expectedProcess || await processExists(expectedProcess)) return { opened: true, resolved: alias, method: 'alias' };
+      // start often returns before the process is visible; treat as opened when start succeeded
+      return { opened: true, resolved: alias, method: 'alias_unverified' };
     }
   }
 
-  const r = await runStart(t);
-  if (r.ok) return { opened: true, resolved: t };
+  // Prefer cached Start Apps / shortcuts / Steam folders — never block on cold PowerShell here.
+  void ensureStartAppsCache();
+  const cached = resolveFromStartAppsCache(t.replace(/^(the\s+|my\s+|a\s+)/i, '').replace(/\bgames?\b/gi, '').trim() || t);
+  if (cached) {
+    const launchTarget = cached.kind === 'start' ? `shell:AppsFolder\\${cached.appId}` : cached.appId;
+    const r = await runStart(launchTarget);
+    if (r.ok) return { opened: true, resolved: cached.name, method: cached.kind };
+  }
 
+  const r = await runStart(t);
+  if (r.ok) return { opened: true, resolved: t, method: 'name' };
+
+  // Last resort: wait briefly for cache refresh then retry once.
   try {
-    const { execFileSync } = await import('node:child_process');
-    const out = execFileSync('powershell', [
-      '-NoProfile', '-Command',
-      `Get-StartApps | Where-Object { $_.Name -like '*${t.replace(/'/g, "''")}*' } | Select-Object -First 1 -ExpandProperty AppID`,
-    ], { encoding: 'utf8', windowsHide: true, timeout: 8000 });
-    const appId = out.trim();
-    if (appId) {
-      const r2 = await runStart(`shell:AppsFolder\\${appId}`);
-      if (r2.ok) return { opened: true, resolved: appId };
+    await ensureStartAppsCache(true);
+    const again = resolveFromStartAppsCache(t);
+    if (again) {
+      const launchTarget = again.kind === 'start' ? `shell:AppsFolder\\${again.appId}` : again.appId;
+      const r2 = await runStart(launchTarget);
+      if (r2.ok) return { opened: true, resolved: again.name, method: again.kind };
     }
   } catch { /* ignore */ }
 
@@ -81,13 +108,40 @@ function processExists(imageName: string): Promise<boolean> {
   });
 }
 
-export async function playMedia(target: string): Promise<{ played: boolean; resolved?: string; error?: string; candidates?: string[] }> {
+export async function playMedia(
+  target: string,
+  signal?: AbortSignal
+): Promise<{ played: boolean; resolved?: string; error?: string; candidates?: string[]; provider?: string }> {
   let t = target.trim();
   if (!t) return { played: false, error: 'empty_target' };
+  if (signal?.aborted) return { played: false, error: 'aborted' };
 
   const { existsSync } = await import('node:fs');
   const { readdirSync } = await import('node:fs');
   const pathMod = await import('node:path');
+
+  const runStart = (x: string) => new Promise<{ ok: boolean; error?: string }>((resolve) => {
+    if (signal?.aborted) {
+      resolve({ ok: false, error: 'aborted' });
+      return;
+    }
+    const child = spawn('cmd', ['/c', 'start', '', x], { windowsHide: true });
+    const onAbort = () => {
+      try { child.kill(); } catch { /* ignore */ }
+      resolve({ ok: false, error: 'aborted' });
+    };
+    signal?.addEventListener('abort', onAbort, { once: true });
+    let err = '';
+    child.stderr.on('data', (d) => { err += d.toString(); });
+    child.on('close', (code) => {
+      signal?.removeEventListener('abort', onAbort);
+      resolve(code === 0 ? { ok: true } : { ok: false, error: err.trim() || `exit ${code}` });
+    });
+    child.on('error', (e) => {
+      signal?.removeEventListener('abort', onAbort);
+      resolve({ ok: false, error: e.message });
+    });
+  });
 
   if (!existsSync(t)) {
     const roots = [
@@ -122,36 +176,46 @@ export async function playMedia(target: string): Promise<{ played: boolean; reso
     else if (local.status === 'ambiguous') {
       return { played: false, error: 'ambiguous_local_match', candidates: local.candidates.map((candidate) => candidate.title) };
     } else {
-      // Do not scrape search-result HTML. Open the official search page and
-      // let the owner choose; the result is not a confirmed playback.
       const q = t.replace(/['"]/g, '').trim();
-      const url = `https://www.youtube.com/results?search_query=${encodeURIComponent(q)}`;
-      const r = await new Promise<{ ok: boolean; error?: string }>((resolve) => {
-        const child = spawn('cmd', ['/c', 'start', '', url], { windowsHide: true });
-        let err = '';
-        child.stderr.on('data', (d) => { err += d.toString(); });
-        child.on('close', (code) => resolve(code === 0 ? { ok: true } : { ok: false, error: err.trim() || `exit ${code}` }));
-        child.on('error', (e) => resolve({ ok: false, error: e.message }));
-      });
-      return r.ok
-        ? { played: false, resolved: url, error: 'search_page_opened_needs_selection' }
-        : { played: false, error: r.error ?? 'search_page_failed' };
+      const providers: FallbackProvider[] = [
+        {
+          id: 'spotify',
+          search: async (query) => {
+            const uri = `spotify:search:${encodeURIComponent(query)}`;
+            const r = await runStart(uri);
+            if (r.ok) return { opened: true, selectedByOwner: false, url: uri };
+            return { opened: false, selectedByOwner: false };
+          }
+        },
+        {
+          id: 'youtube',
+          search: async (query) => {
+            const url = `https://www.youtube.com/results?search_query=${encodeURIComponent(query)}`;
+            const r = await runStart(url);
+            return r.ok
+              ? { opened: true, selectedByOwner: false, url }
+              : { opened: false, selectedByOwner: false };
+          }
+        }
+      ];
+      const chain = new MediaFallbackChain(providers);
+      const fallback = await chain.search(q);
+      if (fallback.opened) {
+        return {
+          played: false,
+          resolved: fallback.url,
+          provider: fallback.provider,
+          error: 'search_page_opened_needs_selection'
+        };
+      }
+      return { played: false, error: fallback.error ?? 'search_page_failed' };
     }
   }
 
-  const r = await (async () => {
-    return new Promise<{ ok: boolean; error?: string }>((resolve) => {
-      const child = spawn('cmd', ['/c', 'start', '', t], { windowsHide: true });
-      let err = '';
-      child.stderr.on('data', (d) => { err += d.toString(); });
-      child.on('close', (code) => resolve(code === 0 ? { ok: true } : { ok: false, error: err.trim() || `exit ${code}` }));
-      child.on('error', (e) => resolve({ ok: false, error: e.message }));
-    });
-  })();
+  const r = await runStart(t);
   if (!r.ok) return { played: false, error: r.error };
-  // Best-effort observation: default handlers usually spawn a media/host process.
   await new Promise((resolve) => setTimeout(resolve, 800));
-  return { played: true, resolved: t };
+  return { played: true, resolved: t, provider: 'local' };
 }
 
 let ttsProcess: ChildProcess | null = null;

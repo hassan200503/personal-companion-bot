@@ -23,6 +23,20 @@ export interface LearningDecision {
 
 const sensitiveTraitPattern = /\b(health|medical|diagnos|religion|politic|sexual|orientation|race|ethnic|mental health|disability)\b/i;
 
+/** Style/tone/vocab/topic/interest/preference may consolidate same-day after enough observations. */
+const fastInferredCategoryPattern = /style|tone|vocabulary|topic|interest|preference/i;
+
+export function isFastInferredCategory(category: string): boolean {
+  return fastInferredCategoryPattern.test(category);
+}
+
+function hasEnoughInferredEvidence(candidate: LearningCandidate): boolean {
+  const { observations, spanDays } = candidate.evidence;
+  if (observations < 3) return false;
+  if (isFastInferredCategory(candidate.category)) return spanDays >= 0;
+  return spanDays >= 14;
+}
+
 export function evaluateLearningCandidate(candidate: LearningCandidate, previouslyRejected = false): LearningDecision {
   const content = candidate.content.trim();
   if (!content) return { allowed: false, reason: 'empty_content', sensitivity: 'normal' };
@@ -30,7 +44,7 @@ export function evaluateLearningCandidate(candidate: LearningCandidate, previous
   if (candidate.evidence.thirdPartyContent) return { allowed: false, reason: 'third_party_content', sensitivity: 'personal' };
   if (sensitiveTraitPattern.test(`${candidate.category} ${content}`)) return { allowed: false, reason: 'sensitive_trait', sensitivity: 'sensitive' };
   const explicit = candidate.origin === 'explicit' || candidate.evidence.explicitOwnerStatement === true;
-  const enoughEvidence = explicit || (candidate.evidence.observations >= 3 && candidate.evidence.spanDays >= 14);
+  const enoughEvidence = explicit || hasEnoughInferredEvidence(candidate);
   if (!enoughEvidence) return { allowed: false, reason: 'needs_more_evidence', sensitivity: candidate.sensitivity ?? 'normal' };
   return { allowed: true, sensitivity: candidate.sensitivity ?? 'normal' };
 }

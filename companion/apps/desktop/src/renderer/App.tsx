@@ -1,9 +1,9 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
+﻿/* eslint-disable @typescript-eslint/no-explicit-any */
 import { useEffect, useRef, useState } from 'react';
 import { composeGreeting } from '@companion/core/voice/greeting';
 import { normalizeSpeech } from '@companion/core/cognition/style-normalizer';
 import { normalizePersonaState } from '@companion/core/voice/personality';
-import { isQuietHours } from '@companion/core/voice/speech';
+import { isNoiseTranscript, isQuietHours } from '@companion/core/voice/speech';
 import {
   advanceVoiceGuide,
   createVoiceGuideProgress,
@@ -12,11 +12,17 @@ import {
   needsVoiceGuide,
   normalizeVoiceGuideProgress,
   speakableGuideLine,
-  voiceGuideStepIndex,
   voiceGuideSteps,
   type VoiceGuideProgress
 } from '@companion/core/onboarding/voice-guide';
 import { VoiceCapture } from './voice-capture';
+import { AlertsRail, type ProactiveAlert } from './components/AlertsRail';
+import { ChatStage } from './components/ChatStage';
+import { ConfirmModal } from './components/ConfirmModal';
+import { OnboardingHero } from './components/OnboardingHero';
+import { SettingsShell, type EmailForm } from './components/SettingsShell';
+import { VoiceDock } from './components/VoiceDock';
+import type { ProposedMemory } from './components/MemoryInbox';
 
 type Provider = {
   id: string;
@@ -45,7 +51,14 @@ type DiscoveredModel = {
 
 export default function App() {
   const [info, setInfo] = useState<any>(null);
-  const [tab, setTab] = useState<'setup' | 'chat'>('setup');
+  const [tab, setTab] = useState<'setup' | 'chat' | 'settings'>('setup');
+  const [settingsSection, setSettingsSection] = useState<'voice' | 'persona' | 'privacy' | 'email' | 'providers' | 'memory' | 'data'>('voice');
+  const [alerts, setAlerts] = useState<ProactiveAlert[]>([]);
+  const [proposed, setProposed] = useState<ProposedMemory[]>([]);
+  const [emailForm, setEmailForm] = useState<EmailForm>({ host: 'imap.gmail.com', port: 993, user: '', password: '', tls: true, configured: false });
+  const [emailStatus, setEmailStatus] = useState('');
+  const [grantable, setGrantable] = useState<string[]>([]);
+  const [updateLabel, setUpdateLabel] = useState('');
   const [providers, setProviders] = useState<Provider[]>([]);
   const [stored, setStored] = useState<string[]>([]);
   const [selectedProvider, setSelectedProvider] = useState('gemini');
@@ -78,7 +91,7 @@ export default function App() {
   const [cloudConsentNeeded, setCloudConsentNeeded] = useState(false);
   const [profile, setProfile] = useState<any>({});
   const [auditLogs, setAuditLogs] = useState<any[]>([]);
-  const [updateInfo, setUpdateInfo] = useState<any>(null);
+  const [, setUpdateInfo] = useState<any>(null);
   const [muted, setMuted] = useState(false);
   const [pendingAction, setPendingAction] = useState<{ actionHash: string; toolName: string; input: any } | null>(null);
   const [owner, setOwner] = useState<any>({});
@@ -109,6 +122,7 @@ export default function App() {
   const autoStartedRef = useRef(false);
   const captureRef = useRef<VoiceCapture | null>(null);
   const voiceSettingsRef = useRef<any>({});
+  const consecutiveNoiseRef = useRef(0);
 
   const selected = providers.find((p) => p.id === selectedProvider) || providers[0];
 
@@ -175,6 +189,25 @@ export default function App() {
         guideActiveRef.current = shouldGuide && !isVoiceGuideComplete(loadedGuide);
         setGuidePrompt(getVoiceGuideStep(loadedGuide.currentStep).prompt);
       } catch { /* ignore */ }
+      try {
+        const cfg: any = await window.companion.emailGetConfig();
+        setEmailForm({
+          host: cfg?.host || 'imap.gmail.com',
+          port: Number(cfg?.port) || 993,
+          user: cfg?.user || '',
+          password: '',
+          tls: cfg?.tls !== false,
+          configured: cfg?.configured === true,
+        });
+      } catch { /* ignore */ }
+      try {
+        const inbox: any = await window.companion.memoryListProposed();
+        setProposed(Array.isArray(inbox) ? inbox : []);
+      } catch { /* ignore */ }
+      try {
+        const perms: any = await window.companion.permissionsList();
+        setGrantable(Array.isArray(perms?.grantable) ? perms.grantable : []);
+      } catch { /* ignore */ }
     } catch (e) {
       setError(String(e));
     }
@@ -218,8 +251,18 @@ export default function App() {
         setVoiceError(event.error || 'The voice helper stopped.');
       }
     });
+    const unsubAlert = window.companion.onProactiveAlert((payload) => {
+      setAlerts((prev) => {
+        if (prev.some((a) => a.id === payload.id)) return prev;
+        return [{ id: payload.id, topic: payload.topic, message: payload.message, reason: payload.reason, channel: payload.channel }, ...prev].slice(0, 8);
+      });
+      if (!mutedRef.current && payload.message) {
+        void speakDigest(payload.message);
+      }
+    });
     return () => {
       unsubscribe();
+      unsubAlert();
       voiceModeRef.current = false;
       void captureRef.current?.stop();
       captureRef.current = null;
@@ -622,7 +665,10 @@ export default function App() {
     speakingRef.current = true;
     setSpeaking(true);
     setVoiceState('speaking');
-    captureRef.current?.pause();
+    const bargeInAllowed = voiceSettingsRef.current?.bargeIn !== false;
+    // Keep the mic open when barge-in is on so "stop" can interrupt mid-speech.
+    if (!bargeInAllowed) captureRef.current?.pause();
+    else if (voiceModeRef.current) captureRef.current?.resume();
     try {
       const result: any = await window.companion.voiceSpeak(safeContent);
       if (result?.error && !result?.skipped) {
@@ -630,6 +676,34 @@ export default function App() {
       }
     } catch {
       setVoiceError('Voice output failed. Check that Windows has an installed speech voice.');
+    } finally {
+      speakingRef.current = false;
+      setSpeaking(false);
+      ignoreUntilRef.current = Date.now() + 1200;
+      if (voiceModeRef.current) captureRef.current?.resume();
+      setVoiceState(voiceModeRef.current ? 'listening' : 'off');
+    }
+  }
+
+  /** Chunked read-aloud for email/research digests (barge-in friendly). */
+  async function speakDigest(content: string): Promise<void> {
+    if (mutedRef.current) return;
+    const text = String(content || '').trim();
+    if (!text) return;
+    lastSpokenRef.current = text.slice(0, 240);
+    speakingRef.current = true;
+    setSpeaking(true);
+    setVoiceState('speaking');
+    const bargeInAllowed = voiceSettingsRef.current?.bargeIn !== false;
+    if (!bargeInAllowed) captureRef.current?.pause();
+    else if (voiceModeRef.current) captureRef.current?.resume();
+    try {
+      const result: any = await window.companion.voiceSpeakChunks(text);
+      if (result?.error && !result?.skipped && !result?.interrupted) {
+        setVoiceError(result.error);
+      }
+    } catch {
+      await speakReply(text);
     } finally {
       speakingRef.current = false;
       setSpeaking(false);
@@ -652,12 +726,23 @@ export default function App() {
         const osResult: any = await window.companion.osTryCommand(content, source);
         if (osResult?.handled) {
           const status = osResult.result?.status;
+          const failError = String(osResult.result?.error ?? 'unknown error');
+          const failSummary = failError === 'timeout'
+            ? 'That took too long while looking things up on this PC. Try naming the app more clearly, or say it again in a moment.'
+            : failError === 'aborted'
+              ? 'I stopped that action before it finished.'
+              : `That failed: ${failError}`;
+          const openResolved = osResult.result?.result?.resolved || osResult.input?.target;
           const summary = status === 'needs_confirmation'
             ? `I need your explicit confirmation before I do that. Review the action below; nothing has been sent or changed yet.`
             : status === 'denied'
               ? `I did not run that. ${osResult.result?.error ?? 'The action was blocked.'}`
-              : status === 'failed'
-                ? `That failed: ${osResult.result?.error ?? 'unknown error'}`
+            : status === 'failed'
+                ? failSummary
+                : osResult.toolName === 'os.open'
+                  ? osResult.result?.result?.opened
+                    ? `Opened ${openResolved || 'that'}.`
+                    : `I could not open ${openResolved || 'that'}: ${osResult.result?.result?.error ?? osResult.result?.error ?? 'unknown error'}`
                 : osResult.toolName === 'os.whatsappSend'
                 ? `WhatsApp: ${osResult.result?.result?.sent || osResult.result?.result?.verified
                   ? 'Typed and observed in the chat window. I am not claiming phone delivery.'
@@ -670,12 +755,20 @@ export default function App() {
                     : osResult.result?.result?.error === 'ambiguous_local_match'
                       ? `I found a few matches: ${(osResult.result?.result?.candidates ?? []).slice(0, 5).join(', ') || 'several files'}. Tell me which one.`
                       : osResult.result?.result?.error === 'search_page_opened_needs_selection'
-                        ? 'I opened the official YouTube search page. Pick the result you want; I did not scrape or guess.'
+                        ? osResult.result?.result?.provider === 'spotify'
+                          ? 'I opened Spotify search for that. Pick the track you want; I did not auto-play a guess.'
+                          : 'I opened the official YouTube search page. Pick the result you want; I did not scrape or guess.'
                         : `I could not play that: ${osResult.result?.result?.error ?? 'unknown error'}`
                   : osResult.toolName === 'os.call'
                     ? osResult.result?.result?.initiated
                       ? `I opened the dialer for ${osResult.input?.number ?? osResult.input?.target ?? 'that contact'}. I cannot confirm the call connected.`
                       : `I could not start the call: ${osResult.result?.result?.error ?? osResult.result?.error ?? 'unknown error'}`
+                    : osResult.toolName === 'web.research' || osResult.toolName === 'email.summarize' || osResult.toolName === 'email.important' || osResult.toolName === 'email.readAloud' || osResult.toolName === 'email.listRecent'
+                      ? String(osResult.result?.result?.summary ?? osResult.result?.result?.spoken ?? osResult.result?.result?.text ?? `Done (${status}).`)
+                    : osResult.toolName === 'email.send'
+                      ? osResult.result?.result?.sent
+                        ? String(osResult.result?.result?.summary ?? 'Mail server accepted the message.')
+                        : String(osResult.result?.result?.summary ?? `Email not sent: ${osResult.result?.result?.error ?? status}`)
                     : `Action ${osResult.toolName} finished with status ${status ?? 'unknown'}.`;
           const userMsg = { id: crypto.randomUUID(), role: 'user', content, createdAt: new Date().toISOString() };
           const assistantMsg = { id: crypto.randomUUID(), role: 'assistant', content: summary, createdAt: new Date().toISOString() };
@@ -685,7 +778,11 @@ export default function App() {
           } else {
             setPendingAction(null);
           }
-          if (speak) speakReply(summary);
+          if (speak) {
+            const digestTools = new Set(['web.research', 'email.summarize', 'email.important', 'email.readAloud', 'email.listRecent']);
+            if (digestTools.has(String(osResult.toolName))) void speakDigest(summary);
+            else void speakReply(summary);
+          }
           return;
         }
       } catch { /* fall through to normal chat */ }
@@ -735,6 +832,11 @@ export default function App() {
           : toolResult?.typed
             ? 'WhatsApp: typed, but I could not confirm it appeared in the chat.'
             : `WhatsApp: not sent. ${toolResult?.error ?? ''}`.trim();
+      }
+      if (result?.confirmed && pendingAction.toolName === 'email.send') {
+        summary = toolResult?.sent
+          ? String(toolResult?.summary ?? `Mail server accepted the message for ${pendingAction.input?.to}.`)
+          : String(toolResult?.summary ?? `Email not sent. ${toolResult?.error ?? ''}`.trim());
       }
       setMessages((prev) => [...prev, {
         id: crypto.randomUUID(),
@@ -806,31 +908,55 @@ export default function App() {
         },
         onUtterance: (audio, mimeType) => {
           void (async () => {
-            if (!voiceModeRef.current || speakingRef.current || voiceProcessingRef.current) return;
-            if (Date.now() < ignoreUntilRef.current) return;
+            const bargeInAllowed = voiceSettingsRef.current?.bargeIn !== false;
+            if (!voiceModeRef.current || voiceProcessingRef.current) return;
+            // While speaking, only continue if barge-in is enabled (for stop words).
+            if (speakingRef.current && !bargeInAllowed) return;
+            if (!speakingRef.current && Date.now() < ignoreUntilRef.current) return;
             capture.pause();
             setVoiceState('processing');
-            setInterimTranscript('Transcribing…');
+            setInterimTranscript(speakingRef.current ? 'Checking interruption…' : 'Transcribing…');
             try {
               const result: any = await window.companion.voiceTranscribe(audio, mimeType);
               if (!result?.ok) {
-                setVoiceError(result?.error || 'Speech transcription failed.');
+                const err = String(result?.error || 'Speech transcription failed.');
+                const busy = /503|UNAVAILABLE|high demand|provider_down|rate_limited|busy/i.test(err);
+                setVoiceError(busy
+                  ? 'Cloud speech is busy right now. Try again in a moment, or type instead.'
+                  : err);
                 setInterimTranscript('');
                 if (voiceModeRef.current) {
                   capture.resume();
-                  setVoiceState('listening');
+                  setVoiceState(speakingRef.current ? 'speaking' : 'listening');
                 }
                 return;
               }
               const text = String(result.text ?? '').trim();
               setInterimTranscript(text);
-              if (!text) {
+              if (!text || isNoiseTranscript(text)) {
+                if (speakingRef.current) {
+                  if (voiceModeRef.current) {
+                    capture.resume();
+                    setVoiceState('speaking');
+                  }
+                  return;
+                }
+                consecutiveNoiseRef.current += 1;
+                if (consecutiveNoiseRef.current >= 5) {
+                  consecutiveNoiseRef.current = 0;
+                  setInterimTranscript('');
+                  setVoiceWarning('Lots of background noise — I paused so I would not keep chatting with silence. Tap listen when you are ready.');
+                  stopListening();
+                  void speakReply('I am hearing mostly noise, so I paused listening. Tap listen when you want to talk.');
+                  return;
+                }
                 if (voiceModeRef.current) {
                   capture.resume();
                   setVoiceState('listening');
                 }
                 return;
               }
+              consecutiveNoiseRef.current = 0;
               await handleTranscriptRef.current(text);
             } catch (e) {
               setVoiceError(String(e));
@@ -886,8 +1012,9 @@ export default function App() {
     const command = text.toLowerCase().replace(/[.!?,]+$/g, '').trim();
     if (!speakingRef.current && Date.now() < ignoreUntilRef.current && !command.startsWith('stop')) return;
     if (speakingRef.current) {
+      const bargeInAllowed = voiceSettingsRef.current?.bargeIn !== false;
       const interrupt = ['stop', 'wait', 'be quiet', 'quiet', 'pause'].includes(command);
-      if (!interrupt) return;
+      if (!bargeInAllowed || !interrupt) return;
       await window.companion.voiceStopSpeaking();
       speakingRef.current = false;
       setSpeaking(false);
@@ -971,6 +1098,19 @@ export default function App() {
           proactiveDayRef.current = { day: today, count: proactiveDayRef.current.count + 1 };
           try { localStorage.setItem('companion.proactive', JSON.stringify(proactiveDayRef.current)); } catch { /* ignore */ }
           recentQuestionsRef.current = [...recentQuestionsRef.current, question].slice(-12);
+          if (result?.source === 'career' || result?.topic === 'career') {
+            const alertId = `career-${today}`;
+            setAlerts((prev) => {
+              if (prev.some((a) => a.id === alertId)) return prev;
+              return [...prev, {
+                id: alertId,
+                topic: 'career',
+                message: question,
+                reason: typeof result?.reason === 'string' ? result.reason : undefined,
+                channel: 'spoken',
+              }];
+            });
+          }
           setMessages((prev) => [...prev,
             { id: crypto.randomUUID(), role: 'assistant', content: question, createdAt: new Date().toISOString() }
           ]);
@@ -982,8 +1122,100 @@ export default function App() {
     return () => clearInterval(timer);
   }, [voiceSettings, persona, muted, busy]);
 
+  async function refreshProposed(): Promise<void> {
+    try {
+      const inbox: any = await window.companion.memoryListProposed();
+      setProposed(Array.isArray(inbox) ? inbox : []);
+    } catch { /* ignore */ }
+  }
+
+  async function refreshPermissions(): Promise<void> {
+    try {
+      const perms: any = await window.companion.permissionsList();
+      setGrantable(Array.isArray(perms?.grantable) ? perms.grantable : []);
+    } catch { /* ignore */ }
+  }
+
+  async function saveEmailConfig(): Promise<void> {
+    setBusy(true);
+    setEmailStatus('');
+    try {
+      const saved: any = await window.companion.emailSetConfig({
+        host: emailForm.host,
+        port: emailForm.port,
+        user: emailForm.user,
+        password: emailForm.password || undefined,
+        tls: emailForm.tls,
+      });
+      setEmailForm((prev) => ({
+        ...prev,
+        password: '',
+        configured: saved?.configured === true || Boolean(prev.user && prev.host),
+        host: saved?.host ?? prev.host,
+        port: Number(saved?.port) || prev.port,
+        user: saved?.user ?? prev.user,
+        tls: saved?.tls !== false,
+      }));
+      setEmailStatus(saved?.configured ? 'Email account saved. Password is in Windows Credential Manager.' : 'Saved. Add an app password to connect.');
+    } catch (e) {
+      setEmailStatus(String(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function testEmailConfig(): Promise<void> {
+    setBusy(true);
+    setEmailStatus('Testing…');
+    try {
+      const result: any = await window.companion.emailTestConnection({
+        host: emailForm.host,
+        port: emailForm.port,
+        user: emailForm.user,
+        password: emailForm.password || undefined,
+        tls: emailForm.tls,
+      });
+      setEmailStatus(result?.ok ? 'Connection succeeded.' : `Connection failed: ${result?.error ?? 'unknown'}`);
+    } catch (e) {
+      setEmailStatus(String(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function clearEmailConfig(): Promise<void> {
+    setBusy(true);
+    try {
+      await window.companion.emailClearConfig();
+      setEmailForm({ host: 'imap.gmail.com', port: 993, user: '', password: '', tls: true, configured: false });
+      setEmailStatus('Email disconnected.');
+    } catch (e) {
+      setEmailStatus(String(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function pendingSummary(): string {
+    if (!pendingAction) return '';
+    if (pendingAction.toolName === 'os.call') {
+      return `Call ${pendingAction.input?.number}? This opens the dialer or Phone Link. I will not claim the call connected.`;
+    }
+    if (pendingAction.toolName === 'os.whatsappSend') {
+      return `Message ${pendingAction.input?.contact}: “${pendingAction.input?.message}”. I only mark it sent if I observe it in the chat window.`;
+    }
+    if (pendingAction.toolName === 'email.send') {
+      return `Send email to ${pendingAction.input?.to} — subject “${pendingAction.input?.subject}”. Nothing leaves this PC until you confirm.`;
+    }
+    if (pendingAction.toolName === 'os.run') {
+      return `Run command: ${pendingAction.input?.command}. This can change your PC.`;
+    }
+    return `${pendingAction.toolName}: ${JSON.stringify(pendingAction.input)}`;
+  }
+
   async function stopEverything(): Promise<void> {
     stopListening();
+    try { await window.companion.voiceStopSpeaking(); } catch { /* ignore */ }
     if (pendingAction) {
       try { await window.companion.osRejectTool(pendingAction.actionHash); } catch { /* ignore */ }
       setPendingAction(null);
@@ -992,7 +1224,7 @@ export default function App() {
 
 
   return (
-    <div className="app-shell">
+    <div className="app-shell enterprise">
       <aside className={`sidebar ${navOpen ? '' : 'collapsed'}`}>
         <div className="brand">
           <span className="brand-mark">C</span>
@@ -1002,12 +1234,15 @@ export default function App() {
           </div>
         </div>
 
-        <nav className="nav">
+        <nav className="nav" aria-label="Primary">
+          <button className={tab === 'chat' ? 'nav-item active' : 'nav-item'} onClick={() => { setTab('chat'); setNavOpen(false); }}>
+            Talk
+          </button>
           <button className={tab === 'setup' ? 'nav-item active' : 'nav-item'} onClick={() => { setTab('setup'); setNavOpen(false); }}>
             Setup
           </button>
-          <button className={tab === 'chat' ? 'nav-item active' : 'nav-item'} onClick={() => { setTab('chat'); setNavOpen(false); }}>
-            Talk
+          <button className={tab === 'settings' ? 'nav-item active' : 'nav-item'} onClick={() => { setTab('settings'); setNavOpen(false); void refreshProposed(); void refreshPermissions(); }}>
+            Settings
           </button>
         </nav>
 
@@ -1021,111 +1256,16 @@ export default function App() {
 
         {stored.length > 0 && (
           <div className="sidebar-card">
-            <div className="eyebrow">Connected providers</div>
+            <div className="eyebrow">Connected</div>
             {stored.map((id) => (
               <div key={id} className="provider-pill">{id}</div>
             ))}
           </div>
         )}
 
-        <div className="sidebar-card">
-          <div className="eyebrow">Voice settings</div>
-          <select aria-label="Voice" value={voiceSettings?.voice || ''} onChange={(e) => setVoiceSettings({ ...voiceSettings, voice: e.target.value })}>
-            <option value="">System default voice</option>
-            {voiceVoices.map((voice) => (
-              <option key={voice.id || voice.name} value={voice.name}>{voice.name} ({voice.language})</option>
-            ))}
-          </select>
-          <label className="field-label">Rate
-            <input type="range" min={-10} max={10} value={Number(voiceSettings?.rate ?? 0)} onChange={(e) => setVoiceSettings({ ...voiceSettings, rate: Number(e.target.value) })} />
-          </label>
-          <label className="checkbox-row">
-            <input type="checkbox" checked={voiceSettings?.cloudSpeechConsent === true} onChange={(e) => {
-              const next = { ...voiceSettings, cloudSpeechConsent: e.target.checked };
-              setVoiceSettings(next);
-              voiceSettingsRef.current = next;
-              setCloudConsentNeeded(!e.target.checked);
-            }} />
-            Cloud speech (Gemini transcription)
-          </label>
-          <label className="checkbox-row">
-            <input type="checkbox" checked={voiceSettings?.autoStart !== false} onChange={(e) => setVoiceSettings({ ...voiceSettings, autoStart: e.target.checked })} />
-            Start listening automatically
-          </label>
-          <label className="checkbox-row">
-            <input type="checkbox" checked={voiceSettings?.bargeIn !== false} onChange={(e) => setVoiceSettings({ ...voiceSettings, bargeIn: e.target.checked })} />
-            Allow spoken interruption
-          </label>
-          <label className="checkbox-row">
-            <input type="checkbox" checked={voiceSettings?.proactiveQuestions !== false} onChange={(e) => setVoiceSettings({ ...voiceSettings, proactiveQuestions: e.target.checked })} />
-            Ask me questions by voice
-          </label>
-          <label className="field-label">Quiet hours start
-            <input type="time" value={voiceSettings?.quietHours?.start ?? ''} onChange={(e) => setVoiceSettings({ ...voiceSettings, quietHours: e.target.value ? { start: e.target.value, end: voiceSettings?.quietHours?.end || '07:00' } : undefined })} />
-          </label>
-          <label className="field-label">Quiet hours end
-            <input type="time" value={voiceSettings?.quietHours?.end ?? ''} onChange={(e) => setVoiceSettings({ ...voiceSettings, quietHours: e.target.value ? { start: voiceSettings?.quietHours?.start || '22:00', end: e.target.value } : undefined })} />
-          </label>
-          <div className="actions">
-            <button onClick={async () => {
-              const saved: any = await window.companion.voiceSetSettings(voiceSettings);
-              if (saved?.settings) {
-                setVoiceSettings(saved.settings);
-                voiceSettingsRef.current = saved.settings;
-                setCloudConsentNeeded(saved.settings.cloudSpeechConsent !== true);
-              }
-            }}>Save voice</button>
-            <button className="ghost" onClick={async () => { await window.companion.voiceSpeak('This is how I will sound when I talk with you.'); }}>Test voice</button>
-          </div>
-        </div>
-        <div className="sidebar-card">
-          <div className="eyebrow">Personality</div>
-          <div className="muted">{persona?.calibration?.completedAt ? 'Calibrated' : calibrationQuestion ? 'Setup in progress' : 'Not calibrated yet'}</div>
-          <input placeholder="Your name" value={persona?.profile?.ownerName || ''} onChange={(e) => setPersona({ ...persona, profile: { ...persona?.profile, ownerName: e.target.value } })} />
-          <input placeholder="Companion name" value={persona?.profile?.companionName || 'Companion'} onChange={(e) => setPersona({ ...persona, profile: { ...persona?.profile, companionName: e.target.value } })} />
-          <select aria-label="Tone" value={persona?.profile?.tone || 'warm'} onChange={(e) => setPersona({ ...persona, profile: { ...persona?.profile, tone: e.target.value } })}>
-            {['warm', 'direct', 'playful', 'calm', 'dry', 'energetic', 'custom'].map((tone) => <option key={tone} value={tone}>{tone}</option>)}
-          </select>
-          <textarea placeholder="How do you actually talk? Rhythm, humour, phrases, things you never say." value={persona?.profile?.selfDescription || ''} onChange={(e) => setPersona({ ...persona, profile: { ...persona?.profile, selfDescription: e.target.value } })} />
-          <input placeholder="Phrases you use (comma separated)" value={(persona?.profile?.favoritePhrases || []).join(', ')} onChange={(e) => setPersona({ ...persona, profile: { ...persona?.profile, favoritePhrases: e.target.value.split(',').map((item) => item.trim()).filter(Boolean) } })} />
-          <input placeholder="Never bring up (comma separated)" value={(persona?.profile?.avoidTopics || []).join(', ')} onChange={(e) => setPersona({ ...persona, profile: { ...persona?.profile, avoidTopics: e.target.value.split(',').map((item) => item.trim()).filter(Boolean) } })} />
-          <div className="actions">
-            <button onClick={() => void savePersona(persona)}>Save personality</button>
-            <button className="ghost" onClick={() => void beginCalibration()}>{calibrationQuestion ? 'Continue setup' : 'Start voice setup'}</button>
-          </div>
-        </div>
-        <div className="sidebar-card">
-          <div className="eyebrow">Audit log</div>
-          <button onClick={async () => { setAuditLogs(await window.companion.auditList()); }}>Load audit</button>
-          <pre style={{ fontSize: 10, whiteSpace: 'pre-wrap', maxHeight: 120, overflow: 'auto' }}>{JSON.stringify(auditLogs, null, 2)}</pre>
-        </div>
-        <div className="sidebar-card">
-          <div className="eyebrow">Updates</div>
-          <button onClick={async () => { setUpdateInfo(await window.companion.appCheckUpdates()); }}>Check updates</button>
-          <pre style={{ fontSize: 10, whiteSpace: 'pre-wrap' }}>{JSON.stringify(updateInfo, null, 2)}</pre>
-        </div>
-        <div className="sidebar-card">
-          <div className="eyebrow">Memory profile</div>
-          <pre style={{ fontSize: 11, whiteSpace: 'pre-wrap' }}>{JSON.stringify(profile, null, 2)}</pre>
-          <button onClick={async () => { await window.companion.memoryClearProfile(); setProfile({}); }}>Clear memory</button>
-          {Array.isArray(profile?.notes) && profile.notes.map((n: any, i: number) => (
-            <div key={i} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11 }}>
-              <span>{n.note}</span>
-              <button onClick={async () => {
-                const next = { ...profile, notes: profile.notes.filter((_: any, idx: number) => idx !== i) };
-                await window.companion.memorySetProfile(next);
-                setProfile(next);
-              }}>×</button>
-            </div>
-          ))}
-        </div>
-
-        <div className="sidebar-card">
-          <div className="eyebrow">Owner details</div>
-          <input placeholder="Name" value={owner?.name || ''} onChange={(e) => setOwner({ ...owner, name: e.target.value })} />
-          <input placeholder="Date of birth" value={owner?.dob || ''} onChange={(e) => setOwner({ ...owner, dob: e.target.value })} />
-          <input placeholder="Phone" value={owner?.phone || ''} onChange={(e) => setOwner({ ...owner, phone: e.target.value })} />
-          <button onClick={async () => { await window.companion.memorySetOwner(owner); setProfile(await window.companion.memoryGetProfile()); }}>Save owner</button>
+        <div className="sidebar-card sidebar-foot">
+          <div className="eyebrow">Honesty</div>
+          <p className="muted">I only claim OS actions I can observe — opens, plays, typed chats, accepted mail.</p>
         </div>
       </aside>
 
@@ -1135,68 +1275,33 @@ export default function App() {
         </button>
         {error && <div className="banner error">{error}</div>}
         {status && <div className="banner success">{status}</div>}
+        <AlertsRail
+          alerts={alerts}
+          onDismiss={(id) => setAlerts((prev) => prev.filter((a) => a.id !== id))}
+          onSpeak={(message) => void speakDigest(message)}
+        />
+
         {tab === 'setup' && (
           <div className="content-grid">
-            <section className="card hero voice-guide-hero">
-              <div className="eyebrow">Companion</div>
-              <h1>{guideActive ? 'I will guide you by voice' : 'Talk first. Type only when you want to.'}</h1>
-              <p className="lede">
-                {guideActive
-                  ? 'I speak each step aloud. Answer out loud once cloud speech is on, or type below. We will set your details, my preferences, privacy, and speech.'
-                  : 'Connect a provider, enable cloud speech, then speak naturally. Companion listens on this PC, answers aloud, and only claims OS actions it can observe.'}
-              </p>
-              {guideActive ? (
-                <div className="voice-guide">
-                  <div className="voice-guide-progress" aria-hidden="true">
-                    <div
-                      className="voice-guide-progress-bar"
-                      style={{ width: `${Math.round(((voiceGuideStepIndex(voiceGuide.currentStep) + 1) / voiceGuideSteps.length) * 100)}%` }}
-                    />
-                  </div>
-                  <div className="muted">
-                    Step {voiceGuideStepIndex(voiceGuide.currentStep) + 1} of {voiceGuideSteps.length} · {getVoiceGuideStep(voiceGuide.currentStep).title}
-                  </div>
-                  <p className="voice-guide-prompt">{guidePrompt || getVoiceGuideStep(voiceGuide.currentStep).prompt}</p>
-                  <div className="composer voice-guide-composer">
-                    <textarea
-                      aria-label="Onboarding answer"
-                      placeholder={getVoiceGuideStep(voiceGuide.currentStep).hint}
-                      value={guideAnswer}
-                      onChange={(e) => setGuideAnswer(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter' && !e.shiftKey) {
-                          e.preventDefault();
-                          void submitVoiceGuideAnswer(guideAnswer || 'continue');
-                        }
-                      }}
-                    />
-                    <button
-                      className="primary"
-                      onClick={() => void submitVoiceGuideAnswer(guideAnswer || 'continue')}
-                      disabled={busy || speaking}
-                    >
-                      Continue
-                    </button>
-                  </div>
-                  <div className="actions">
-                    {voiceGuide.draft.cloudSpeechConsent && stored.length > 0 && !voiceMode && (
-                      <button onClick={() => void startListening()} disabled={muted}>Start listening for answers</button>
-                    )}
-                    {voiceMode && <button className="danger" onClick={stopListening}>Pause listening</button>}
-                    <button className="ghost" onClick={() => void speakReply(guidePrompt || getVoiceGuideStep(voiceGuide.currentStep).prompt)}>Hear again</button>
-                  </div>
-                  {voiceGuide.currentStep === 'provider' && (
-                    <p className="muted">Scroll to “Connect an AI provider”, save a Gemini key, then continue here.</p>
-                  )}
-                </div>
-              ) : (
-                <div className="actions">
-                  <button className="primary" onClick={() => void startVoiceOnboarding()} disabled={busy}>Start voice onboarding</button>
-                  <button className="ghost" onClick={() => setTab('chat')} disabled={busy}>Start talking</button>
-                  <button className="ghost" onClick={runOnboarding} disabled={busy}>Run system check only</button>
-                </div>
-              )}
-            </section>
+            <OnboardingHero
+              guideActive={guideActive}
+              voiceGuide={voiceGuide}
+              guidePrompt={guidePrompt}
+              guideAnswer={guideAnswer}
+              busy={busy}
+              speaking={speaking}
+              voiceMode={voiceMode}
+              muted={muted}
+              hasProvider={stored.length > 0}
+              onGuideAnswerChange={setGuideAnswer}
+              onSubmitGuide={(answer) => void submitVoiceGuideAnswer(answer)}
+              onStartVoiceOnboarding={() => void startVoiceOnboarding()}
+              onStartTalking={() => setTab('chat')}
+              onRunSystemCheck={() => void runOnboarding()}
+              onStartListening={() => void startListening()}
+              onStopListening={stopListening}
+              onHearAgain={() => void speakReply(guidePrompt || getVoiceGuideStep(voiceGuide.currentStep).prompt)}
+            />
 
             <section className="card">
               <div className="section-head">
@@ -1224,30 +1329,7 @@ export default function App() {
                     <span>{voiceGuide.draft.ownerName}</span>
                   </div>
                 )}
-                {voiceGuide.draft.companionName && (
-                  <div className="saved-item">
-                    <span>Companion name</span>
-                    <span>{voiceGuide.draft.companionName}</span>
-                  </div>
-                )}
               </div>
-            </section>
-
-            <section className="card">
-              <div className="section-head">
-                <h3>Add another provider</h3>
-                <button className="ghost" onClick={() => setShowCustomProvider((value) => !value)}>{showCustomProvider ? 'Hide form' : 'Create new provider'}</button>
-              </div>
-              {!showCustomProvider ? <p className="muted">Add a provider that is not in the default list using any HTTPS OpenAI-compatible endpoint.</p> : <>
-              <p className="muted">Use this for a favourite model or a self-hosted gateway. Companion stores only the API key in Windows Credential Manager.</p>
-              <div className="custom-grid">
-                <input aria-label="Provider name" placeholder="Provider name" value={custom.name} onChange={(e) => setCustom({ ...custom, name: e.target.value })} />
-                <input aria-label="Base URL" placeholder="https://api.example.com/v1" value={custom.baseUrl} onChange={(e) => setCustom({ ...custom, baseUrl: e.target.value })} />
-                <input aria-label="Model name" placeholder="model-name" value={custom.model} onChange={(e) => setCustom({ ...custom, model: e.target.value })} />
-                <input aria-label="Custom provider API key" type="password" placeholder="API key" value={custom.apiKey} onChange={(e) => setCustom({ ...custom, apiKey: e.target.value })} />
-              </div>
-              <div className="actions"><button onClick={addCustomProvider} disabled={busy || !custom.name || !custom.baseUrl || !custom.model || !custom.apiKey}>Test and add provider</button></div>
-              </>}
             </section>
 
             <section className="card">
@@ -1255,7 +1337,6 @@ export default function App() {
                 <h3>Connect an AI provider</h3>
                 <span className="muted">Connect one or more providers for automatic failover</span>
               </div>
-
               <div className="provider-grid">
                 {providers.map((p) => (
                   <button
@@ -1271,22 +1352,18 @@ export default function App() {
                   </button>
                 ))}
               </div>
-
               {selected && (
                 <div className="provider-detail">
                   <h4>{selected.displayName}</h4>
                   <p className="muted">{selected.privacyNote}</p>
                   <p className="muted">{selected.pricingNote}</p>
-
                   <div className="link-row">
                     <button className="ghost" onClick={() => openLink(selected.signupUrl)}>Create account</button>
                     <button className="ghost" onClick={() => openLink(selected.keyUrl)}>Get API key</button>
                   </div>
-
                   <ol className="guide">
                     {selected.guideSteps.map((s, i) => <li key={i}>{s}</li>)}
                   </ol>
-
                   <label className="field-label" htmlFor="apiKey">API key{selected.keyPrefixHint ? ` (starts with ${selected.keyPrefixHint})` : ''}</label>
                   <input
                     id="apiKey"
@@ -1295,13 +1372,11 @@ export default function App() {
                     onChange={(e) => setApiKey(e.target.value)}
                     placeholder={selected.keyPrefixHint ? `${selected.keyPrefixHint}...` : 'Paste your API key'}
                   />
-
                   <div className="actions">
                     <button onClick={testKey} disabled={busy || !apiKey.trim()}>Test key</button>
                     <button onClick={discoverModels} disabled={busy || !apiKey.trim()}>Discover live models</button>
                     <button onClick={saveKey} disabled={busy || !apiKey.trim()}>Save key</button>
                   </div>
-
                   {(discoveredModels.length > 0 || selectedModel) && (
                     <label className="field-label" htmlFor="modelSelect">
                       Model
@@ -1315,7 +1390,6 @@ export default function App() {
                       </select>
                     </label>
                   )}
-
                   {validation && (
                     <div className={validation.valid ? 'banner success' : 'banner error'}>
                       {validation.valid ? 'Validated successfully.' : validation.error}
@@ -1323,6 +1397,23 @@ export default function App() {
                   )}
                 </div>
               )}
+            </section>
+
+            <section className="card">
+              <div className="section-head">
+                <h3>Add another provider</h3>
+                <button className="ghost" onClick={() => setShowCustomProvider((value) => !value)}>{showCustomProvider ? 'Hide form' : 'Create new provider'}</button>
+              </div>
+              {!showCustomProvider ? <p className="muted">Add a provider that is not in the default list using any HTTPS OpenAI-compatible endpoint.</p> : <>
+              <p className="muted">Companion stores only the API key in Windows Credential Manager.</p>
+              <div className="custom-grid">
+                <input aria-label="Provider name" placeholder="Provider name" value={custom.name} onChange={(e) => setCustom({ ...custom, name: e.target.value })} />
+                <input aria-label="Base URL" placeholder="https://api.example.com/v1" value={custom.baseUrl} onChange={(e) => setCustom({ ...custom, baseUrl: e.target.value })} />
+                <input aria-label="Model name" placeholder="model-name" value={custom.model} onChange={(e) => setCustom({ ...custom, model: e.target.value })} />
+                <input aria-label="Custom provider API key" type="password" placeholder="API key" value={custom.apiKey} onChange={(e) => setCustom({ ...custom, apiKey: e.target.value })} />
+              </div>
+              <div className="actions"><button onClick={addCustomProvider} disabled={busy || !custom.name || !custom.baseUrl || !custom.model || !custom.apiKey}>Test and add provider</button></div>
+              </>}
             </section>
 
             <section className="card">
@@ -1345,135 +1436,148 @@ export default function App() {
             </section>
           </div>
         )}
+
         {tab === 'chat' && (
-          <div className="chat-layout">
-            <aside className="chat-sidebar">
-              <button className="primary" onClick={newConversation} disabled={busy}>New chat</button>
-              <div className="conversation-list">
-                {conversations.map((c: any) => (
-                  <div key={c.id} className="conversation-row" style={{ display: 'flex', gap: 4 }}>
-                    <button
-                      className={c.id === activeConv ? 'conversation active' : 'conversation'}
-                      onClick={() => loadConversation(c.id)}
-                      style={{ flex: 1 }}
-                    >
-                      <span>{c.title || 'Untitled chat'}</span>
-                      <small>{c.messageCount} messages</small>
-                    </button>
-                    <button onClick={async () => {
-                      await window.companion.chatDeleteConversation(c.id);
-                      setConversations(await window.companion.chatListConversations());
-                      if (activeConv === c.id) { setActiveConv(null); setMessages([]); }
-                    }} title="Delete chat">x</button>
-                  </div>
-                ))}
-              </div>
-            </aside>
-
-            <section className="chat-main">
-              <div className={`voice-panel ${voiceMode ? 'listening' : ''} ${speaking ? 'speaking' : ''} ${voiceState === 'processing' ? 'thinking' : ''}`}>
-                <div className="voice-hero">
-                  <div className={`voice-orb ${voiceMode ? 'live' : ''} ${speaking ? 'speak' : ''}`} aria-hidden="true">
-                    <span className="voice-orb-ring" />
-                    <span className="voice-orb-core" />
-                  </div>
-                  <div className="voice-status">
-                    <strong className="voice-headline">
-                      {voiceMode
-                        ? (speaking ? 'Companion is speaking' : voiceState === 'processing' ? 'Thinking about what you said' : voiceState === 'starting' ? 'Opening the microphone' : 'Listening live')
-                        : cloudConsentNeeded ? 'Voice needs your OK' : 'Live voice is off'}
-                    </strong>
-                    <div className="muted">
-                      {voiceMode
-                        ? `Microphone active · ${voiceEngine === 'gemini' ? 'Google Gemini transcription' : `${voiceEngine} engine`} · raw audio is not stored`
-                        : cloudConsentNeeded
-                          ? 'Short speech clips are transcribed by Google Gemini. Nothing is saved as an audio file on this PC.'
-                          : 'Speech is the primary way to talk with Companion. Text is always available.'}
-                    </div>
-                  </div>
-                </div>
-                <div className="voice-actions">
-                  {cloudConsentNeeded && !voiceMode && (
-                    <button className="primary" onClick={() => void enableCloudSpeech()} disabled={!activeConv || muted || !stored.length}>
-                      Enable cloud speech
-                    </button>
-                  )}
-                  {voiceMode
-                    ? <button className="danger" onClick={stopListening}>Pause listening</button>
-                    : !cloudConsentNeeded && <button onClick={() => void startListeningRef.current()} disabled={!activeConv || muted}>Start listening</button>}
-                  <button onClick={() => void toggleMute()}>{muted ? 'Unmute' : 'Mute'}</button>
-                  <button className="danger" onClick={() => void stopEverything()}>Stop everything</button>
-                </div>
-                <div className="living-indicator" aria-live="polite">
-                  <span className="pulse" /> {voiceMode ? 'Speak naturally. Say "stop" while I am talking if you want me to be quiet.' : 'Microphone off.'}
-                </div>
-                {calibrationQuestion && <div className="voice-transcript">Setup {calibrationStep ? `(${calibrationStep})` : ''}: {calibrationQuestion}</div>}
-                {interimTranscript && <div className="voice-transcript" aria-live="polite">{interimTranscript}</div>}
-                {voiceWarning && <div className="voice-consent" role="status">{voiceWarning}</div>}
-                {voiceError && <div className="voice-error" role="alert">{voiceError}</div>}
-                {speechPrivacyNeeded && (
-                  <button className="ghost" onClick={() => void window.companion.openSettings('ms-settings:privacy-microphone')}>
-                    Open Windows microphone privacy settings
-                  </button>
-                )}
-              </div>
-              <div className="messages">
-                {messages.length === 0 && (
-                  <div className="empty-state">
-                    <h3>Say something</h3>
-                    <p>Enable listening and speak. Text is available below if you need it.</p>
-                  </div>
-                )}
-                {messages.map((m: any) => (
-                  <div key={m.id} className={`message ${m.role}`}>
-                    <div className="message-role">{m.role}</div>
-                    <div className="message-content">{m.content}</div>
-                  </div>
-                ))}
-                {pendingAction && (
-                  <div className="confirmation-card" role="alertdialog" aria-label="Confirmation required">
-                    <h4>Confirm action</h4>
-                    {pendingAction.toolName === 'os.call' ? (
-                      <p className="confirmation-readback">
-                        Call <strong>{pendingAction.input?.number}</strong>? This opens the dialer or Phone Link. I will not claim the call connected.
-                      </p>
-                    ) : pendingAction.toolName === 'os.whatsappSend' ? (
-                      <p className="confirmation-readback">
-                        Message <strong>{pendingAction.input?.contact}</strong>: “{pendingAction.input?.message}”. I only mark it sent if I observe it in the chat window.
-                      </p>
-                    ) : (
-                      <>
-                        <p><strong>{pendingAction.toolName}</strong></p>
-                        <pre>{JSON.stringify(pendingAction.input, null, 2)}</pre>
-                      </>
-                    )}
-                    <div className="confirmation-actions">
-                      <button className="primary" onClick={() => void confirmPendingAction()} disabled={busy}>Confirm</button>
-                      <button className="danger" onClick={() => void rejectPendingAction()} disabled={busy}>Cancel</button>
-                    </div>
-                    <p className="muted">Nothing changes until you confirm.</p>
-                  </div>
-                )}
-              </div>
-
-              <div className="composer">
-                <textarea
-                  value={draft}
-                  onChange={(e) => setDraft(e.target.value)}
-                  placeholder={activeConv ? 'Or type if you prefer…' : 'Create or select a chat first'}
-                  disabled={!activeConv || busy}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' && !e.shiftKey) {
-                      e.preventDefault();
-                      void sendDraft();
-                    }
-                  }}
-                />
-                <button onClick={sendDraft} disabled={!activeConv || busy || !draft.trim()}>Send</button>
-                <div className="composer-hint">Speech is primary. Text is a backup.</div>
-              </div>
-            </section>
+          <div className="talk-stage">
+            <VoiceDock
+              voiceMode={voiceMode}
+              speaking={speaking}
+              voiceState={voiceState}
+              voiceEngine={voiceEngine}
+              cloudConsentNeeded={cloudConsentNeeded}
+              muted={muted}
+              hasProvider={stored.length > 0}
+              hasConversation={Boolean(activeConv)}
+              interimTranscript={interimTranscript}
+              calibrationQuestion={calibrationQuestion}
+              calibrationStep={calibrationStep}
+              voiceWarning={voiceWarning}
+              voiceError={voiceError}
+              speechPrivacyNeeded={speechPrivacyNeeded}
+              onEnableCloudSpeech={() => void enableCloudSpeech()}
+              onStartListening={() => void startListeningRef.current()}
+              onStopListening={stopListening}
+              onToggleMute={() => void toggleMute()}
+              onStopEverything={() => void stopEverything()}
+              onOpenMicSettings={() => void window.companion.openSettings('ms-settings:privacy-microphone')}
+            />
+            <ChatStage
+              conversations={conversations}
+              activeConv={activeConv}
+              messages={messages}
+              draft={draft}
+              busy={busy}
+              onDraftChange={setDraft}
+              onSend={() => void sendDraft()}
+              onNewConversation={() => void newConversation()}
+              onLoadConversation={(id) => void loadConversation(id)}
+              onDeleteConversation={(id) => void (async () => {
+                await window.companion.chatDeleteConversation(id);
+                setConversations(await window.companion.chatListConversations());
+                if (activeConv === id) { setActiveConv(null); setMessages([]); }
+              })()}
+            />
+            {pendingAction && (
+              <ConfirmModal
+                toolName={pendingAction.toolName}
+                summary={pendingSummary()}
+                busy={busy}
+                onConfirm={() => void confirmPendingAction()}
+                onReject={() => void rejectPendingAction()}
+              />
+            )}
           </div>
+        )}
+
+        {tab === 'settings' && (
+          <SettingsShell
+            section={settingsSection}
+            onSection={setSettingsSection}
+            voiceSettings={voiceSettings}
+            voiceVoices={voiceVoices}
+            onVoiceSettings={(next) => {
+              setVoiceSettings(next);
+              voiceSettingsRef.current = next;
+              setCloudConsentNeeded(next.cloudSpeechConsent !== true);
+            }}
+            onSaveVoice={async () => {
+              const saved: any = await window.companion.voiceSetSettings(voiceSettings);
+              if (saved?.settings) {
+                setVoiceSettings(saved.settings);
+                voiceSettingsRef.current = saved.settings;
+                setCloudConsentNeeded(saved.settings.cloudSpeechConsent !== true);
+              }
+              setStatus('Voice settings saved.');
+            }}
+            onTestVoice={() => void window.companion.voiceSpeak('This is how I will sound when I talk with you.')}
+            persona={persona}
+            calibrationQuestion={calibrationQuestion}
+            onPersona={setPersona}
+            onSavePersona={() => void savePersona(persona)}
+            onBeginCalibration={() => void beginCalibration()}
+            email={emailForm}
+            emailStatus={emailStatus}
+            onEmail={setEmailForm}
+            onSaveEmail={() => void saveEmailConfig()}
+            onTestEmail={() => void testEmailConfig()}
+            onClearEmail={() => void clearEmailConfig()}
+            proposed={proposed}
+            onApproveMemory={async (id) => {
+              await window.companion.memoryApprove(id);
+              await refreshProposed();
+              setStatus('Memory approved.');
+            }}
+            onRejectMemory={async (id) => {
+              await window.companion.memoryReject(id);
+              await refreshProposed();
+              setStatus('Memory rejected.');
+            }}
+            onRefreshMemory={() => void refreshProposed()}
+            owner={owner}
+            onOwner={setOwner}
+            onSaveOwner={async () => {
+              await window.companion.memorySetOwner(owner);
+              try { setProfile(await window.companion.memoryGetProfile()); } catch { /* ignore */ }
+              setStatus('Owner profile saved.');
+            }}
+            grantable={grantable}
+            onGrant={async (permission) => {
+              await window.companion.permissionsGrant(permission);
+              await refreshPermissions();
+              setStatus(`Granted ${permission}. Class-3 actions still need confirmation.`);
+            }}
+            onExport={async () => {
+              const result = await window.companion.privacyExport();
+              setStatus(typeof result === 'object' ? 'Export complete.' : String(result));
+            }}
+            onDeleteAll={async () => {
+              await window.companion.privacyDeleteAll();
+              setStatus('Local companion data deleted.');
+              await loadAll();
+            }}
+            onCheckUpdates={async () => {
+              const infoUpdate: any = await window.companion.appCheckUpdates();
+              setUpdateInfo(infoUpdate);
+              setUpdateLabel(infoUpdate?.message || infoUpdate?.status || JSON.stringify(infoUpdate));
+            }}
+            updateLabel={updateLabel}
+          >
+            <div className="provider-detail">
+              <p className="muted">Connected: {stored.length ? stored.join(', ') : 'none yet'}. Use Setup to add keys.</p>
+              <button className="ghost" onClick={() => setTab('setup')}>Open Setup</button>
+              <div className="actions">
+                <button onClick={async () => { setAuditLogs(await window.companion.auditList()); }}>Load audit</button>
+              </div>
+              {auditLogs.length > 0 && <pre className="code-block">{JSON.stringify(auditLogs, null, 2)}</pre>}
+              {profile && Object.keys(profile).length > 0 && (
+                <>
+                  <h4>Memory profile</h4>
+                  <pre className="code-block">{JSON.stringify(profile, null, 2)}</pre>
+                  <button onClick={async () => { await window.companion.memoryClearProfile(); setProfile({}); }}>Clear memory profile</button>
+                </>
+              )}
+            </div>
+          </SettingsShell>
         )}
       </main>
     </div>

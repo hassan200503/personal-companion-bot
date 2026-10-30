@@ -225,6 +225,27 @@ export function toSpeakable(input: string, rules: SpeakableRules = {}): string {
   return text;
 }
 
+/** Split long digests into barge-in friendly sentence groups for WinRT TTS. */
+export function chunkSpeakable(
+  input: string,
+  options?: { sentencesPerChunk?: number; maxChunks?: number; speakSafe?: boolean }
+): string[] {
+  const sentencesPerChunk = Math.max(1, options?.sentencesPerChunk ?? 2);
+  const maxChunks = Math.max(1, options?.maxChunks ?? 12);
+  const full = toSpeakable(input, {
+    speakSafe: options?.speakSafe !== false,
+    maxSentences: sentencesPerChunk * maxChunks,
+    maxCharacters: 8_000,
+  });
+  if (!full) return [];
+  const sentences = full.match(/[^.!?]+[.!?]+|[^.!?]+$/g)?.map((s) => s.trim()).filter(Boolean) ?? [full];
+  const chunks: string[] = [];
+  for (let i = 0; i < sentences.length && chunks.length < maxChunks; i += sentencesPerChunk) {
+    chunks.push(sentences.slice(i, i + sentencesPerChunk).join(' '));
+  }
+  return chunks;
+}
+
 function normalizeForCompare(text: string): string {
   return text.toLowerCase().replace(/[^a-z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim();
 }
@@ -233,18 +254,34 @@ export function words(text: string): string[] {
   return normalizeForCompare(text).split(' ').filter((word) => word.length > 1);
 }
 
-const fillerWords = new Set(['a', 'an', 'the', 'uh', 'um', 'er', 'ah', 'hmm', 'mm']);
+const fillerWords = new Set([
+  'a', 'an', 'the', 'uh', 'um', 'er', 'ah', 'hmm', 'mm', 'mhm', 'huh', 'hm',
+  'noise', 'silence', 'inaudible', 'unintelligible', 'blank', 'empty', 'static'
+]);
+
+const noiseTagPattern = /^(?:<\s*noise\s*>|\(\s*noise\s*\)|\[\s*noise\s*\]|<\s*silence\s*>|\(\s*silence\s*\)|\[\s*silence\s*\])$/i;
+const punctuationOnlyPattern = /^[\s./\\|,;:!?'"`~_\-…•·]+$/;
 
 /**
  * Reject recognizer noise before it becomes a chat message. System.Speech in
  * particular emits very low-confidence single filler words from room tone.
+ * Cloud STT may also emit tags like `<noise>` for ambient sound.
  */
 export function isNoiseTranscript(text: string, confidence?: number, minimumConfidence = 0.2): boolean {
-  const normalized = normalizeForCompare(text);
-  if (!normalized) return true;
+  const raw = String(text ?? '').trim();
+  if (!raw) return true;
+  if (punctuationOnlyPattern.test(raw)) return true;
+  if (noiseTagPattern.test(raw)) return true;
+  if (/^(?:noise|silence|inaudible|unintelligible|empty)$/i.test(raw)) return true;
   if (typeof confidence === 'number' && Number.isFinite(confidence) && confidence < minimumConfidence) return true;
+  const normalized = normalizeForCompare(raw);
+  if (!normalized) return true;
   const tokens = normalized.split(' ').filter(Boolean);
-  return tokens.length > 0 && tokens.every((token) => fillerWords.has(token));
+  if (tokens.length === 0) return true;
+  if (tokens.every((token) => fillerWords.has(token))) return true;
+  // Single very short nonsense token that is not a real command word.
+  if (tokens.length === 1 && tokens[0]!.length <= 2 && !/^(no|ok|go|hi|yo|up|on)$/i.test(tokens[0]!)) return true;
+  return false;
 }
 
 /** Jaccard similarity over words, used to reject the companion hearing itself. */

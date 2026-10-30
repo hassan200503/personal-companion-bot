@@ -284,16 +284,30 @@ export class ProviderRouter {
     signal: AbortSignal
   ): Promise<AudioTranscriptionResult> {
     let lastError: Error | undefined;
+    const maxAttempts = Math.max(1, this.config.maxRetries);
     for (const rp of this.getProviders()) {
       if (!rp.provider.transcribe) continue;
       const breaker = this.circuitBreakers.get(rp.provider.id);
       if (breaker?.isOpen()) continue;
-      try {
-        return await rp.provider.transcribe(request, signal);
-      } catch (error) {
-        lastError = error instanceof Error ? error : new Error(String(error));
-        breaker?.recordFailure();
-        if (error instanceof ProviderError && !error.retryable) break;
+      for (let attempt = 0; attempt < maxAttempts; attempt++) {
+        if (signal.aborted) break;
+        try {
+          const result = await rp.provider.transcribe(request, signal);
+          breaker?.recordSuccess();
+          return result;
+        } catch (error) {
+          lastError = error instanceof Error ? error : new Error(String(error));
+          breaker?.recordFailure();
+          if (error instanceof ProviderError && error.code === 'rate_limited') {
+            this.quotaLedger.recordRateLimit(rp.provider.id, error.retryAfter || 60);
+          }
+          if (error instanceof ProviderError && !error.retryable) break;
+          // Brief backoff for 503 / high-demand spikes before retrying the same provider.
+          if (attempt + 1 < maxAttempts && !signal.aborted) {
+            const waitMs = Math.min(2500, 400 * (attempt + 1));
+            await new Promise((resolve) => setTimeout(resolve, waitMs));
+          }
+        }
       }
     }
     throw lastError instanceof ProviderError
@@ -351,6 +365,10 @@ export class ProviderRouter {
         if (error instanceof ProviderError && !error.retryable) {
           throw error;
         }
+        if (attempt + 1 < this.config.maxRetries && !signal.aborted) {
+          const waitMs = Math.min(2500, 400 * (attempt + 1));
+          await new Promise((resolve) => setTimeout(resolve, waitMs));
+        }
       }
     }
 
@@ -402,6 +420,10 @@ export class ProviderRouter {
 
         if (error instanceof ProviderError && !error.retryable) {
           throw error;
+        }
+        if (attempt + 1 < this.config.maxRetries && !signal.aborted) {
+          const waitMs = Math.min(2500, 400 * (attempt + 1));
+          await new Promise((resolve) => setTimeout(resolve, waitMs));
         }
       }
     }

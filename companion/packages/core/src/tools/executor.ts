@@ -77,12 +77,20 @@ export class DefaultToolExecutor implements ToolExecutor {
         return { status: 'needs_confirmation', actionHash: pending.actionHash };
       }
     }
-    // execute with timeout
+    // execute with timeout — abort the shared signal so child work can stop
     let timer: NodeJS.Timeout | null = null;
+    const timeoutController = new AbortController();
+    const onParentAbort = () => timeoutController.abort();
+    if (ctx.signal.aborted) timeoutController.abort();
+    else ctx.signal.addEventListener('abort', onParentAbort, { once: true });
+    const timedCtx = { ...ctx, signal: timeoutController.signal };
     try {
-      const execPromise = tool.execute(ctx, request.input as never);
+      const execPromise = tool.execute(timedCtx, request.input as never);
       const timeoutPromise = new Promise<never>((_, reject) => {
-        timer = setTimeout(() => reject(new Error('timeout')), tool.timeoutMs);
+        timer = setTimeout(() => {
+          timeoutController.abort();
+          reject(new Error('timeout'));
+        }, tool.timeoutMs);
       });
       const result = await Promise.race([execPromise, timeoutPromise]);
       // validate output
@@ -90,17 +98,18 @@ export class DefaultToolExecutor implements ToolExecutor {
       if (!outParsed.success) {
         throw new Error('invalid_output');
       }
-      if (tool.postcondition && !(await tool.postcondition(ctx, request.input as never, result as never))) {
+      if (tool.postcondition && !(await tool.postcondition(timedCtx, request.input as never, result as never))) {
         throw new Error('postcondition_unverified');
       }
-      ctx.audit.record({ action: `tool:${tool.name}`, outcome: 'completed', detail: { audit: tool.audit }, createdAt: ctx.now().toISOString() });
+      timedCtx.audit.record({ action: `tool:${tool.name}`, outcome: 'completed', detail: { audit: tool.audit }, createdAt: timedCtx.now().toISOString() });
       return { status: 'completed', result };
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      ctx.audit.record({ action: `tool:${tool.name}`, outcome: 'failed', detail: { error: message }, createdAt: ctx.now().toISOString() });
+      timedCtx.audit.record({ action: `tool:${tool.name}`, outcome: 'failed', detail: { error: message }, createdAt: timedCtx.now().toISOString() });
       return { status: 'failed', error: message };
     } finally {
       if (timer) clearTimeout(timer);
+      ctx.signal.removeEventListener('abort', onParentAbort);
     }
   }
 }

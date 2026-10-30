@@ -3,45 +3,56 @@ import type { ToolDefinition } from '../tools/contracts.js';
 import { openTarget, playMedia, speakText, makeCall, runCommand, takeScreenshot, takePhoto, recordVideo, sendWhatsAppMessage } from './windows.js';
 import { normalizeSpeech } from '../cognition/style-normalizer.js';
 
-export function createOsOpenTool(): ToolDefinition<{ target: string }, { opened: boolean }> {
+export function createOsOpenTool(): ToolDefinition<{ target: string }, { opened: boolean; resolved?: string; method?: string; error?: string }> {
   return {
     name: 'os.open',
-    version: '1.0.0',
+    version: '1.1.0',
     description: 'Open a file, folder, URL, or application using the OS default handler.',
     inputSchema: z.object({ target: z.string().min(1) }),
-    outputSchema: z.object({ opened: z.boolean() }),
+    outputSchema: z.object({
+      opened: z.boolean(),
+      resolved: z.string().optional(),
+      method: z.string().optional(),
+      error: z.string().optional()
+    }),
     requiredPermissions: ['os.open'],
     dataClassification: 'personal',
     riskClass: 2,
     reversible: false,
-    timeoutMs: 10_000,
+    timeoutMs: 30_000,
     cancellable: true,
     audit: 'metadata',
     platforms: ['all'],
-    execute: async (_ctx, input) => {
-      const r = await openTarget(input.target);
-      return { opened: r.opened };
+    execute: async (ctx, input) => {
+      const r = await openTarget(input.target, ctx.signal);
+      return { opened: r.opened, resolved: r.resolved, method: r.method, error: r.error };
     },
   };
 }
 
-export function createOsPlayTool(): ToolDefinition<{ target: string }, { played: boolean; resolved?: string; error?: string; candidates?: string[] }> {
+export function createOsPlayTool(): ToolDefinition<{ target: string }, { played: boolean; resolved?: string; error?: string; candidates?: string[]; provider?: string }> {
   return {
     name: 'os.play',
-    version: '1.0.0',
-    description: 'Play a media file or URL using the default media player. If no local file exists, opens the official search page without scraping.',
+    version: '1.1.0',
+    description: 'Play a media file or URL using the default media player. If no local file exists, tries Spotify then official YouTube search without scraping.',
     inputSchema: z.object({ target: z.string().min(1) }),
-    outputSchema: z.object({ played: z.boolean(), resolved: z.string().optional(), error: z.string().optional(), candidates: z.array(z.string()).optional() }),
+    outputSchema: z.object({
+      played: z.boolean(),
+      resolved: z.string().optional(),
+      error: z.string().optional(),
+      candidates: z.array(z.string()).optional(),
+      provider: z.string().optional()
+    }),
     requiredPermissions: ['os.media'],
     dataClassification: 'personal',
     riskClass: 2,
     reversible: false,
-    timeoutMs: 10_000,
+    timeoutMs: 30_000,
     cancellable: true,
     audit: 'metadata',
     platforms: ['all'],
-    execute: async (_ctx, input) => {
-      return playMedia(input.target);
+    execute: async (ctx, input) => {
+      return playMedia(input.target, ctx.signal);
     },
   };
 }
@@ -86,7 +97,7 @@ export function createOsCallTool(): ToolDefinition<{ number: string }, { initiat
     riskClass: 3,
     reversible: false,
     requiresConfirmation: true,
-    timeoutMs: 10_000,
+    timeoutMs: 30_000,
     cancellable: true,
     audit: 'full',
     platforms: ['all'],
@@ -229,7 +240,7 @@ export function createOsWhatsAppTool(): ToolDefinition<{ contact: string; messag
     riskClass: 3,
     reversible: false,
     requiresConfirmation: true,
-    timeoutMs: 15_000,
+    timeoutMs: 35_000,
     cancellable: true,
     audit: 'full',
     platforms: ['all'],

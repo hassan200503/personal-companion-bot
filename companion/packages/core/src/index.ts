@@ -60,3 +60,13 @@ export * from './os-control/windows.js';
 export * from './os-control/capability-store.js';
 export * from './os-control/uia.js';
 export * from './os-control/clipboard.js';
+export { createResearchTools, createWebResearchTool, webResearch } from './research/index.js';
+export type {
+  WebResearchInput,
+  WebResearchOptions,
+  WebResearchResult,
+  WebResearchSource,
+  WebResearchToolInput,
+  WebResearchToolOutput,
+} from './research/index.js';
+export * from './email/index.js';

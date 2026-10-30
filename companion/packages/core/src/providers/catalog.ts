@@ -429,7 +429,7 @@ class GeminiProvider implements ChatProvider {
         contents: [{
           role: 'user',
           parts: [
-            { text: 'Transcribe the speech in this audio verbatim. Output only the transcript, with no quotation marks or commentary. If there is no intelligible speech, output an empty string.' },
+            { text: 'Transcribe the speech in this audio verbatim. Output only the transcript, with no quotation marks, tags, or commentary. If there is no intelligible speech, only noise, silence, or music without words, output exactly an empty string — never write <noise>, (noise), silence, or similar placeholders.' },
             { inlineData: { mimeType: request.mimeType, data: request.audio } }
           ]
         }],

@@ -446,3 +446,10 @@ The live WinRT microphone path, real owner speech, barge-in timing and raw-audio
 | V-79 | `npm.cmd run verify` from `companion/` | PASS: ESLint 0 errors / 0 warnings, TypeScript clean, 44 test files / 297 tests (includes voice-guide, audio/segmenter, cloud consent defaults), Electron main/preload/supervisor and Vite renderer builds completed. |
 | V-80 | Source inspection: `voice-capture.ts`, `voiceTranscribe` consent gate, `advanceVoiceGuide`, OS call/WhatsApp/media honesty | PASS by inspection: Gemini transcription requires `cloudSpeechConsent`; voice guide collects owner details + preferences + preset + speech consent; WhatsApp UIA observation and call name/tel paths present. |
 | V-81 | `npm.cmd run package` from `companion/`; `Get-FileHash` / `Get-AuthenticodeSignature` on `apps/desktop/release/Companion-0.1.0-x64.exe` | PASS: NSIS x64 installer rebuilt after speech-first + voice onboarding slice. Artifact `Companion-0.1.0-x64.exe` is 122,781,868 bytes; SHA-256 `E7F850384880EC5B915CCEFDBF47DC4B752AFB4B983F534B7EB54C3A167444E0`; Authenticode `NotSigned` (expected without G4). Bundled helper `resources/voice/CompanionVoice.exe` is 22,528 bytes. Clean-machine install/SmartScreen still open. |
+
+## 33. Production hardening finish (email / research / enterprise UI) (2026-10-30)
+
+| ID | Command / inspection | Observed result |
+| --- | --- | --- |
+| V-82 | `npm.cmd run verify` from `companion/` | PASS: ESLint 0 errors / 0 warnings, TypeScript clean, 49 test files / 311 tests, Electron main/preload/supervisor and Vite renderer builds completed. Covers IMAP/SMTP helpers, research tools, owner-seed, proactive career/email candidates, and WinRT SSML pitch. |
+| V-83 | `npm.cmd run package -w @companion/desktop`; `Get-FileHash` SHA256 on `apps/desktop/release/Companion-0.1.0-x64.exe` | PASS: NSIS x64 installer rebuilt after production hardening. Artifact `Companion-0.1.0-x64.exe` is 122,837,891 bytes; SHA-256 `32E04C31DFB2FD78CC7C02996BBE8174B0F2138DF1AA2A14CADE86675143B8E8`; unsigned (expected without G4). Bundled helper `resources/voice/CompanionVoice.exe` is 23,552 bytes. |

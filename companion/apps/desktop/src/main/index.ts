@@ -42,8 +42,30 @@ import {
   normalizeVoiceSettings,
   normalizePersonaState,
   normalizeVoiceGuideProgress,
+  seedOwnerCareerProfile,
+  buildCareerCandidates,
+  buildEmailImportantCandidates,
+  ProactiveEngine,
+  createMemorySearchTool,
+  createMemoryProposeTool,
+  createEmailTools,
+  loadEmailConfig,
+  saveEmailPassword,
+  clearEmailPassword,
+  emailSettingsBlob,
+  publicEmailAccount,
+  EMAIL_SETTINGS_KEY,
+  EMAIL_KEYTAR_ACCOUNT,
+  EMAIL_KEYTAR_SERVICE,
+  listRecentMessages,
+  pickImportant,
+  ImapClient,
+  approveMemory,
+  rejectMemory,
+  listApprovalInbox,
   type CalibrationStepId,
   type VoiceSettings,
+  type EmailAccountInput,
 } from "@companion/core";
 import { ipcChannels, type AppInfo } from "../shared/ipc";
 import type {
@@ -53,11 +75,14 @@ import type {
   ConversationMessage,
   CredentialStore,
   IntentSource,
+  MemoryRepository,
   ToolExecutionContext
 } from "@companion/core";
 import { createOsControlTools } from "../../../../packages/core/src/os-control/tools.js";
+import { createResearchTools } from "../../../../packages/core/src/research/index.js";
 import { stopSpeaking } from "../../../../packages/core/src/os-control/windows.js";
 import { createDesktopCredentialStore, createDesktopKeyProtector } from "./storage/adapters";
+import * as keytar from "@github/keytar";
 import { probeSecurityEnvironment } from "./security";
 import { VoiceService, type VoiceServiceEvent } from "./voice-service";
 import {
@@ -96,6 +121,8 @@ let toolRegistry: DefaultToolRegistry | null = null;
 let toolExecutor: DefaultToolExecutor | null = null;
 let confirmationManager: InMemoryConfirmationManager | null = null;
 let auditLogger: SqliteAuditLogger | null = null;
+let memoryRepository: MemoryRepository | null = null;
+let proactiveEngine: ProactiveEngine | null = null;
 let voiceService: VoiceService | null = null;
 let defaultModel = '';
 let tray: Tray | null = null;
@@ -103,6 +130,58 @@ let backgroundScheduler: Scheduler | null = null;
 let backgroundPaused = false;
 const emergencyStop = new EmergencyStop();
 let heartbeatTimer: NodeJS.Timeout | null = null;
+
+function readOwnerProfile(): Record<string, unknown> {
+  try {
+    const row = companionDatabase?.raw.prepare('SELECT value FROM settings WHERE key = ?').get('owner.profile') as { value?: string } | undefined;
+    const parsed = row?.value ? JSON.parse(row.value) : {};
+    return parsed !== null && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed as Record<string, unknown> : {};
+  } catch {
+    return {};
+  }
+}
+
+function writeOwnerProfile(owner: Record<string, unknown>): void {
+  companionDatabase?.raw.prepare(
+    'INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at'
+  ).run('owner.profile', JSON.stringify(owner), new Date().toISOString());
+}
+
+/** One-time career defaults when owner.profile is empty or missing goals. */
+function seedOwnerProfileIfNeeded(): void {
+  if (!companionDatabase) return;
+  try {
+    const persona = loadPersonaState(companionDatabase);
+    const nameHint = persona.profile.ownerName || undefined;
+    const { profile, seeded } = seedOwnerCareerProfile(readOwnerProfile(), { nameHint });
+    if (!seeded) return;
+    writeOwnerProfile(profile);
+    // Mirror missing persona goals/interests so proactive prompts see career context.
+    const goals = Array.isArray(profile.goals) ? profile.goals.map(String) : [];
+    const interests = Array.isArray(profile.interests) ? profile.interests.map(String) : [];
+    if ((!persona.profile.goals.length || !persona.profile.interests.length) && (goals.length || interests.length)) {
+      savePersonaState(companionDatabase, {
+        ...persona,
+        profile: {
+          ...persona.profile,
+          goals: persona.profile.goals.length ? persona.profile.goals : goals,
+          interests: persona.profile.interests.length ? persona.profile.interests : interests,
+        },
+      });
+    }
+    logger.info('seeded owner career profile defaults');
+  } catch (e) {
+    logger.warn('owner career seed skipped', { error: String(e) });
+  }
+}
+
+function quietHoursToEngineRange(quietHours?: { start: string; end: string }): { start: number; end: number } | undefined {
+  if (!quietHours) return undefined;
+  const start = Number.parseInt(String(quietHours.start).split(':')[0] ?? '', 10);
+  const end = Number.parseInt(String(quietHours.end).split(':')[0] ?? '', 10);
+  if (!Number.isFinite(start) || !Number.isFinite(end)) return undefined;
+  return { start, end };
+}
 
 function lifecyclePath(name: string): string { return join(app.getPath('userData'), name); }
 
@@ -227,7 +306,10 @@ async function openStorage(): Promise<void> {
         onboardingEngine = new DefaultOnboardingEngine(registry, storage);
         await onboardingEngine.initialize();
 
+        seedOwnerProfileIfNeeded();
         const memoryRepo = new SqliteMemoryRepository(companionDatabase.raw);
+        memoryRepository = memoryRepo;
+        proactiveEngine = proactiveEngine ?? new ProactiveEngine();
         const convStore = new SqliteConversationStore(companionDatabase.raw);
           credentialStore = createDesktopCredentialStore(logger);
           const router = new ProviderRouter({ maxRetries: 8 });
@@ -269,11 +351,15 @@ async function openStorage(): Promise<void> {
             // round-trip per turn. Voice needs the first good answer, fast;
             // the persistent persona prompt carries the character instead.
           });
-           // OS control tools
+           // OS control + research + memory + email tools
            try {
              const reg = new DefaultToolRegistry();
              const cm = new InMemoryConfirmationManager();
              for (const t of createOsControlTools()) reg.register(t);
+             for (const t of createResearchTools()) reg.register(t);
+             for (const t of createEmailTools(() => resolveEmailConfigForTools())) reg.register(t);
+             reg.register(createMemorySearchTool() as never);
+             reg.register(createMemoryProposeTool() as never);
              toolRegistry = reg;
              confirmationManager = cm;
              toolExecutor = new DefaultToolExecutor(reg, new DefaultPolicyEngine(), cm);
@@ -285,8 +371,103 @@ async function openStorage(): Promise<void> {
           id: 'reflection',
           intervalMs: 60_000,
           run: async () => {
-            const loop = new BoundedReflectionLoop({ maxIterations: 3, maxDurationMs: 5_000 });
+            // Bounded local consolidation: one light pass over owner notes, no network.
+            const loop = new BoundedReflectionLoop({
+              maxIterations: 3,
+              maxDurationMs: 5_000,
+              onIteration: async (i) => {
+                if (i > 0) return false;
+                try {
+                  const owner = readOwnerProfile();
+                  const notes = typeof owner.notes === 'string' ? owner.notes.trim() : '';
+                  if (notes && Array.isArray(owner.goals) && owner.goals.length && !notes.toLowerCase().includes('career')) {
+                    // Keep existing notes; do not rewrite owner edits — reflection is observational only here.
+                  }
+                } catch {
+                  // Reflection must never crash the scheduler.
+                }
+                return false;
+              },
+            });
             await loop.run();
+          },
+        });
+        backgroundScheduler.register({
+          id: 'email-important-poll',
+          intervalMs: 15 * 60_000,
+          run: async () => {
+            if (backgroundPaused || !proactiveEngine) return;
+            try {
+              const config = await resolveEmailConfigForTools();
+              if (!config) return;
+              const voice = readVoiceSettings();
+              const messages = await listRecentMessages(config, 20, { timeoutMs: 25_000 });
+              const important = pickImportant(messages, { limit: 5 });
+              const now = Date.now();
+              const candidates = buildEmailImportantCandidates(
+                important.map((m) => ({
+                  id: String(m.uid),
+                  subject: m.subject,
+                  from: m.from,
+                  important: true,
+                  receivedAt: now,
+                })),
+                now
+              );
+              for (const candidate of candidates) {
+                const decision = proactiveEngine.evaluate(candidate, {
+                  now,
+                  quietHours: quietHoursToEngineRange(voice.quietHours),
+                  spokenDailyCap: voice.proactiveDailyCap,
+                });
+                if (!decision.show) continue;
+                for (const win of BrowserWindow.getAllWindows()) {
+                  if (win.isDestroyed()) continue;
+                  win.webContents.send(ipcChannels.proactiveAlert, {
+                    id: candidate.id,
+                    topic: candidate.topic,
+                    message: candidate.message,
+                    reason: candidate.reason,
+                    channel: decision.channel,
+                  });
+                }
+              }
+            } catch (error) {
+              logger.warn('email important poll failed', { error: String(error) });
+            }
+          },
+        });
+        backgroundScheduler.register({
+          id: 'career-digest-poll',
+          intervalMs: 6 * 60 * 60_000,
+          run: async () => {
+            if (backgroundPaused || !proactiveEngine) return;
+            try {
+              const voice = readVoiceSettings();
+              if (voice.proactiveQuestions === false) return;
+              const now = Date.now();
+              const candidates = buildCareerCandidates(readOwnerProfile(), now);
+              for (const candidate of candidates) {
+                const decision = proactiveEngine.evaluate(candidate, {
+                  now,
+                  quietHours: quietHoursToEngineRange(voice.quietHours),
+                  spokenDailyCap: voice.proactiveDailyCap,
+                });
+                if (!decision.show) continue;
+                for (const win of BrowserWindow.getAllWindows()) {
+                  if (win.isDestroyed()) continue;
+                  win.webContents.send(ipcChannels.proactiveAlert, {
+                    id: candidate.id,
+                    topic: candidate.topic,
+                    message: candidate.message,
+                    reason: candidate.reason,
+                    channel: decision.channel,
+                  });
+                }
+              }
+            } catch (error) {
+              logger.warn('career digest poll failed', { error: String(error) });
+            }
           },
         });
         backgroundScheduler.start();
@@ -388,10 +569,53 @@ const SAFE_PERMISSIONS = [
   'os.open',
   'os.media',
   'os.speak',
+  'web.fetch',
   'memory.read',
   'memory.write',
-  'drafts.write'
+  'drafts.write',
+  'email.read',
 ] as const;
+
+const GRANTABLE_PERMISSIONS = [
+  'os.message.send',
+  'os.telephony',
+  'os.exec',
+  'email.send',
+] as const;
+
+function readEmailSettings(): Record<string, unknown> {
+  try {
+    const row = companionDatabase?.raw.prepare('SELECT value FROM settings WHERE key = ?').get(EMAIL_SETTINGS_KEY) as { value?: string } | undefined;
+    const parsed = row?.value ? JSON.parse(row.value) : {};
+    return parsed !== null && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed as Record<string, unknown> : {};
+  } catch {
+    return {};
+  }
+}
+
+function writeEmailSettings(settings: Record<string, unknown>): void {
+  companionDatabase?.raw.prepare(
+    'INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at'
+  ).run(EMAIL_SETTINGS_KEY, JSON.stringify(settings), new Date().toISOString());
+}
+
+async function resolveEmailConfigForTools(): Promise<import('@companion/core').EmailConfig | null> {
+  try {
+    return await loadEmailConfig(readEmailSettings(), keytar, EMAIL_KEYTAR_SERVICE);
+  } catch {
+    return null;
+  }
+}
+
+function persistGrantedPermission(permission: string): string[] {
+  const granted = grantedPermissions();
+  granted.add(permission);
+  const list = [...granted].filter((p) => typeof p === 'string');
+  companionDatabase?.raw.prepare(
+    'INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at'
+  ).run('permissions.granted', JSON.stringify(list), new Date().toISOString());
+  return list;
+}
 
 function grantedPermissions(): Set<string> {
   const granted = new Set<string>(SAFE_PERMISSIONS);
@@ -417,6 +641,7 @@ async function buildToolContext(signal: AbortSignal): Promise<ToolExecutionConte
     permissions: grantedPermissions(),
     audit: auditLogger ?? { record: () => {}, list: () => [] } as never,
     confirmation: confirmationManager!,
+    memoryRepository: memoryRepository ?? undefined,
     now: () => new Date(),
     environment,
   };
@@ -853,6 +1078,12 @@ function registerIpc(): void {
     return voiceService.speak(String(text ?? ''), readVoiceSettings());
   });
 
+  ipcMain.handle(ipcChannels.voiceSpeakChunks, async (event, suppliedToken: unknown, text: string): Promise<unknown> => {
+    assertTrustedSender(event, suppliedToken);
+    if (!voiceService) return { spoken: false, error: 'Voice service unavailable.' };
+    return voiceService.speakChunks(String(text ?? ''), readVoiceSettings());
+  });
+
   ipcMain.handle(ipcChannels.voiceListVoices, async (event, suppliedToken: unknown): Promise<unknown> => {
     assertTrustedSender(event, suppliedToken);
     return voiceService ? voiceService.listVoices() : { synthesis: [], recognitionLanguages: [] };
@@ -894,6 +1125,20 @@ function registerIpc(): void {
         : [];
       const state = loadPersonaState(companionDatabase);
       if (!state.profile.askQuestions) return { question: '', source: 'disabled' };
+      const now = Date.now();
+      const voice = readVoiceSettings();
+      proactiveEngine = proactiveEngine ?? new ProactiveEngine();
+      const career = buildCareerCandidates(readOwnerProfile(), now);
+      for (const candidate of career) {
+        const decision = proactiveEngine.evaluate(candidate, {
+          now,
+          quietHours: quietHoursToEngineRange(voice.quietHours),
+          spokenDailyCap: voice.proactiveDailyCap,
+        });
+        if (decision.show) {
+          return { question: candidate.message, source: 'career', reason: candidate.reason, topic: candidate.topic };
+        }
+      }
       const proactive = await generateProactiveQuestion(companionDatabase, {
         router: providerRouter,
         model: defaultModel,
@@ -946,9 +1191,9 @@ function registerIpc(): void {
     // Normalize quotes
     const clean = trimmed.replace(/^["']|["']$/g, '').trim();
 
-    // Memory: remember
-    if (lower.startsWith('remember ')) {
-      const note = trimmed.slice(9).trim();
+    // Memory: remember → propose for approval inbox (fast explicit path)
+    if (lower.startsWith('remember ') || /^my name is\b/i.test(lower) || /^i (?:am|like|prefer|hate|love)\b/i.test(lower)) {
+      const note = lower.startsWith('remember ') ? trimmed.slice(9).trim() : trimmed;
       try {
         const row = companionDatabase?.raw.prepare('SELECT value FROM settings WHERE key = ?').get('memory.profile') as { value?: string } | undefined;
         const profile = row?.value ? JSON.parse(row.value) : {};
@@ -959,7 +1204,62 @@ function registerIpc(): void {
           'INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at'
         ).run('memory.profile', JSON.stringify(profile), new Date().toISOString());
       } catch { /* ignore */ }
-      return { handled: true, toolName: 'memory.remember', result: { ok: true, note } };
+      if (toolExecutor && note) {
+        const controller = new AbortController();
+        const disarm = emergencyStop.arm(controller);
+        try {
+          const ctx = await buildToolContext(controller.signal);
+          const result = await toolExecutor.execute({
+            toolName: 'memory.propose',
+            input: { category: 'fact', content: note, origin: 'explicit', observations: 1, spanDays: 0 },
+            trust: 'trusted',
+            intentSource: source ?? 'owner_ui',
+          }, ctx);
+          return { handled: true, toolName: 'memory.propose', result };
+        } catch (error) {
+          return {
+            handled: true,
+            toolName: 'memory.propose',
+            result: { status: 'failed', error: error instanceof Error ? error.message : String(error) },
+          };
+        } finally {
+          disarm();
+        }
+      }
+      return { handled: true, toolName: 'memory.remember', result: { status: 'succeeded', result: { ok: true, note } } };
+    }
+    // Email send (Class-3 — confirmation required)
+    else if (/\b(send|compose|write)\b.*\b(email|e-mail|mail)\b/i.test(lower) || /\b(email|e-mail|mail)\b.*\b(to|send)\b/i.test(lower)) {
+      let to = '';
+      const toMatch = trimmed.match(/\bto\s+([^\s,]+@[^\s,]+)/i) || trimmed.match(/\b([A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,})\b/i);
+      if (toMatch) to = (toMatch[1] ?? '').trim();
+      let subject = '';
+      const subjMatch = trimmed.match(/\bsubject\s*[:-]\s*["']?([^"'.,\n]+)["']?/i)
+        || trimmed.match(/\babout\s+["']([^"']+)["']/i);
+      if (subjMatch) subject = (subjMatch[1] ?? '').trim();
+      let body = '';
+      const bodyMatch = trimmed.match(/\b(?:saying|body|message)\s*[:-]\s*["']([^"']+)["']/i)
+        || trimmed.match(/["']([^"']{8,})["']/);
+      if (bodyMatch) body = (bodyMatch[1] ?? '').trim();
+      if (!subject) subject = 'Message from Companion';
+      if (!body) body = trimmed;
+      if (to) {
+        toolName = 'email.send';
+        input = { to, subject, body };
+      }
+    }
+    // Email heuristics
+    else if (/\b(check|read|summarize|important)\b.*\b(email|inbox|mail)\b/i.test(lower) || /\b(email|inbox|mail)\b.*\b(summary|summarize|important|read)\b/i.test(lower)) {
+      if (/\bimportant\b/i.test(lower)) {
+        toolName = 'email.important';
+        input = { limit: 8 };
+      } else if (/\bread\b/i.test(lower) && !/\bsummar/i.test(lower)) {
+        toolName = 'email.readAloud';
+        input = { importantOnly: /\bimportant\b/i.test(lower) };
+      } else {
+        toolName = 'email.summarize';
+        input = { limit: 15 };
+      }
     }
     // Screenshot
     else if (lower.includes('screenshot') || lower.includes('capture screen') || lower.includes('screen capture')) {
@@ -988,6 +1288,20 @@ function registerIpc(): void {
     // Camera open
     else if (lower.includes('camera') || lower.includes('webcam')) {
       toolName = 'os.camera'; input = { mode: lower.includes('video') ? 'video' : 'photo' };
+    }
+    // Research (official APIs — untrusted content)
+    else if (/\b(research|look\s*up|what\s+is|who\s+is|tell\s+me\s+about)\b/i.test(lower)) {
+      let query = '';
+      const qm = trimmed.match(/["']([^"']+)["']/);
+      if (qm) query = qm[1] ?? query;
+      else {
+        const m = trimmed.match(/(?:research|look\s*up|what\s+is|who\s+is|tell\s+me\s+about)\s+(.+)$/i);
+        if (m) query = (m[1] ?? '').trim().replace(/[?.!]+$/, '');
+      }
+      if (query) {
+        toolName = 'web.research';
+        input = { query, openSources: /\b(open|show)\b/i.test(lower), readAloud: true };
+      }
     }
     // Browser / search
     else if (lower.includes('search') || lower.includes('google') || lower.includes('browser') || lower.includes('chrome')) {
@@ -1043,7 +1357,7 @@ function registerIpc(): void {
     else if (lower.startsWith('screenshot') || lower === 'take screenshot' || lower.startsWith('capture screen')) {
       toolName = 'os.screenshot'; input = {};
     }
-    if (!toolName && providerRouter && defaultModel && /\b(open|play|search|google|browser|run|speak|say|call|screenshot|photo|video|camera|whatsapp|calculator|notepad|settings|explorer|files|notepad)\b/i.test(lower)) {
+    if (!toolName && providerRouter && defaultModel && /\b(open|play|search|google|browser|run|speak|say|call|screenshot|photo|video|camera|whatsapp|calculator|notepad|settings|explorer|files|notepad|research|look\s*up|what\s+is|who\s+is|email|inbox|mail|send|compose|remember)\b/i.test(lower)) {
       try {
         const controller = new AbortController();
         const timer = setTimeout(() => controller.abort(), 4000);
@@ -1053,7 +1367,7 @@ function registerIpc(): void {
             providerRouter.complete({
           model: defaultModel,
           messages: [
-            { role: 'system', content: 'You are an OS control router. Map the user command to one tool. Respond ONLY with JSON: {"tool": "<toolname or none>", "input": {}}. Tools: os.open(target), os.play(target), os.speak(text), os.call(number_or_contact_name), os.run(command), os.screenshot(), os.camera(mode), os.photo(), os.video(seconds), os.whatsappSend(contact,message). For calls put the spoken name or number in input.number. Never invent success. If no OS action, tool="none".' },
+            { role: 'system', content: 'You are an OS control router. Map the user command to one tool. Respond ONLY with JSON: {"tool": "<toolname or none>", "input": {}}. Tools: os.open(target), os.play(target), os.speak(text), os.call(number_or_contact_name), os.run(command), os.screenshot(), os.camera(mode), os.photo(), os.video(seconds), os.whatsappSend(contact,message), web.research(query, openSources?, readAloud?), email.summarize(limit?), email.important(limit?), email.readAloud(uid?, importantOnly?), email.listRecent(limit?), email.send(to,subject,body), memory.propose(category,content). Prefer web.research for factual look-ups (results are untrusted_content). Prefer email.* for inbox requests; never invent mail if unsure — still pick the email tool. email.send requires to+subject+body and is Class-3 (confirmation). For calls put the spoken name or number in input.number. Never invent success. If no OS action, tool="none".' },
             { role: 'user', content: trimmed },
           ],
           temperature: 0,
@@ -1134,6 +1448,109 @@ function registerIpc(): void {
     assertTrustedSender(event, suppliedToken);
     if (!confirmationManager) throw new Error('OS control unavailable');
     return { rejected: confirmationManager.reject(actionHash) };
+  });
+
+  ipcMain.handle(ipcChannels.memoryListProposed, (event, suppliedToken: unknown): unknown => {
+    assertTrustedSender(event, suppliedToken);
+    if (!memoryRepository) return [];
+    return listApprovalInbox(memoryRepository).map((m) => ({
+      id: m.id,
+      category: m.category,
+      content: m.content,
+      origin: m.origin,
+      createdAt: m.createdAt,
+    }));
+  });
+
+  ipcMain.handle(ipcChannels.memoryApprove, (event, suppliedToken: unknown, id: string): unknown => {
+    assertTrustedSender(event, suppliedToken);
+    if (!memoryRepository || typeof id !== 'string') return { ok: false };
+    approveMemory(memoryRepository, id);
+    return { ok: true };
+  });
+
+  ipcMain.handle(ipcChannels.memoryReject, (event, suppliedToken: unknown, id: string): unknown => {
+    assertTrustedSender(event, suppliedToken);
+    if (!memoryRepository || typeof id !== 'string') return { ok: false };
+    rejectMemory(memoryRepository, id);
+    return { ok: true };
+  });
+
+  ipcMain.handle(ipcChannels.emailGetConfig, async (event, suppliedToken: unknown): Promise<unknown> => {
+    assertTrustedSender(event, suppliedToken);
+    const settings = readEmailSettings();
+    let hasPassword = false;
+    try {
+      hasPassword = Boolean(await keytar.getPassword(EMAIL_KEYTAR_SERVICE, EMAIL_KEYTAR_ACCOUNT));
+    } catch {
+      /* credential store unavailable */
+    }
+    return publicEmailAccount(settings, hasPassword);
+  });
+
+  ipcMain.handle(ipcChannels.emailSetConfig, async (event, suppliedToken: unknown, input: unknown): Promise<unknown> => {
+    assertTrustedSender(event, suppliedToken);
+    try {
+      const account = input as EmailAccountInput;
+      const blob = emailSettingsBlob({
+        host: String(account?.host ?? ''),
+        port: Number(account?.port ?? 993),
+        user: String(account?.user ?? ''),
+        tls: account?.tls !== false,
+      });
+      if (!blob.host || !blob.user) return { ok: false, error: 'Host and user are required.' };
+      writeEmailSettings(blob);
+      if (typeof account?.password === 'string' && account.password.trim()) {
+        await saveEmailPassword(keytar, account.password, EMAIL_KEYTAR_SERVICE);
+      }
+      const hasPassword = Boolean(await keytar.getPassword(EMAIL_KEYTAR_SERVICE, EMAIL_KEYTAR_ACCOUNT));
+      return { ok: true, config: publicEmailAccount(blob, hasPassword) };
+    } catch (e) {
+      return { ok: false, error: e instanceof Error ? e.message : String(e) };
+    }
+  });
+
+  ipcMain.handle(ipcChannels.emailTestConnection, async (event, suppliedToken: unknown, input?: unknown): Promise<unknown> => {
+    assertTrustedSender(event, suppliedToken);
+    try {
+      if (input && typeof input === 'object') {
+        const account = input as EmailAccountInput;
+        if (account.host && account.user) {
+          writeEmailSettings(emailSettingsBlob(account));
+          if (account.password?.trim()) await saveEmailPassword(keytar, account.password, EMAIL_KEYTAR_SERVICE);
+        }
+      }
+      const config = await loadEmailConfig(readEmailSettings(), keytar, EMAIL_KEYTAR_SERVICE);
+      await ImapClient.withSession(config, async () => true, { timeoutMs: 20_000 });
+      return { ok: true, message: 'IMAP connected. Inbox is reachable.' };
+    } catch (e) {
+      return { ok: false, error: e instanceof Error ? e.message : String(e) };
+    }
+  });
+
+  ipcMain.handle(ipcChannels.emailClearConfig, async (event, suppliedToken: unknown): Promise<unknown> => {
+    assertTrustedSender(event, suppliedToken);
+    writeEmailSettings({});
+    await clearEmailPassword(keytar, EMAIL_KEYTAR_SERVICE);
+    return { ok: true };
+  });
+
+  ipcMain.handle(ipcChannels.permissionsList, (event, suppliedToken: unknown): unknown => {
+    assertTrustedSender(event, suppliedToken);
+    const granted = [...grantedPermissions()];
+    return {
+      granted,
+      grantable: GRANTABLE_PERMISSIONS.filter((p) => !granted.includes(p)),
+    };
+  });
+
+  ipcMain.handle(ipcChannels.permissionsGrant, (event, suppliedToken: unknown, permission: string): unknown => {
+    assertTrustedSender(event, suppliedToken);
+    if (!GRANTABLE_PERMISSIONS.includes(permission as typeof GRANTABLE_PERMISSIONS[number])) {
+      return { ok: false, error: 'Permission is not grantable from the UI.' };
+    }
+    const granted = persistGrantedPermission(permission);
+    return { ok: true, granted };
   });
 }
 
@@ -1249,6 +1666,12 @@ app.whenReady().then(async () => {
    if (!startupEnabled()) app.setLoginItemSettings({ openAtLogin: false });
   await checkCredentialStore();
   createVoiceService();
+  // Warm Start Apps / shortcut / Steam cache so os.open never cold-blocks on Get-StartApps.
+  void import("../../../../packages/core/src/os-control/start-apps-cache.js")
+    .then((mod) => mod.ensureStartAppsCache())
+    .catch((error: unknown) => {
+      logger.warn("start-apps cache warmup failed", { error });
+    });
   registerIpc();
   globalShortcut.register('Control+Shift+Escape', () => {
     emergencyStop.stopAll();

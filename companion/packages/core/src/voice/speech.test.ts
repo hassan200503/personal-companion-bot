@@ -125,6 +125,15 @@ describe('noise rejection', () => {
     expect(isNoiseTranscript('what time is it')).toBe(false);
     expect(isNoiseTranscript('')).toBe(true);
   });
+
+  it('drops cloud STT noise tags and punctuation-only clips', () => {
+    expect(isNoiseTranscript('<noise>')).toBe(true);
+    expect(isNoiseTranscript('(noise)')).toBe(true);
+    expect(isNoiseTranscript('[silence]')).toBe(true);
+    expect(isNoiseTranscript('...')).toBe(true);
+    expect(isNoiseTranscript('noise')).toBe(true);
+    expect(isNoiseTranscript('open the game')).toBe(false);
+  });
 });
 
 describe('barge-in echo guard', () => {

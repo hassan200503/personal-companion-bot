@@ -75,9 +75,19 @@ export class DefaultScheduler implements Scheduler {
 export interface ReflectionLoopOptions {
   maxIterations: number;
   maxDurationMs: number;
+  /**
+   * Optional per-tick work. Return false to stop early as 'completed'.
+   * Keep this local, bounded, and free of network or unbounded writes.
+   */
   onIteration?: (i: number) => Promise<boolean | void> | (boolean | void);
 }
 
+/**
+ * Bounded background consolidation loop.
+ * Caps iterations and wall time so reflection cannot run away.
+ * Default body is a safe no-op; callers may supply onIteration for light
+ * owner-model note merge or similar local consolidation.
+ */
 export class BoundedReflectionLoop {
   constructor(private readonly options: ReflectionLoopOptions) {}
 
@@ -89,6 +99,7 @@ export class BoundedReflectionLoop {
         return { iterations, stoppedReason: 'timeout' };
       }
       iterations = i + 1;
+      // Safe default: tick without side effects when onIteration is omitted.
       let cont: boolean | void = true;
       if (this.options.onIteration) {
         cont = await this.options.onIteration(i);

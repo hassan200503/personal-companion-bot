@@ -1,7 +1,7 @@
 # Gap List (v3 brief)
 
 Baseline: 2026-10-29. Graded against `docs/REQUIREMENTS.md`.
-Latest verification: `npm.cmd run verify` from `companion/` passed 0 lint errors/warnings, clean TypeScript, 44 test files / 297 tests, and both builds. See `docs/VERIFICATION_LOG.md` section 32.
+Latest verification: `npm.cmd run verify` from `companion/` passed 0 lint errors/warnings, clean TypeScript, 49 test files / 311 tests, and both builds. See `docs/VERIFICATION_LOG.md` section 33.
 Status values: `FIXED` means code + verification exist for the stated slice; `PARTIAL` means some behavior is present but the acceptance check is not fully met; `OPEN` means no implementation.
 
 ## Critical
@@ -44,7 +44,7 @@ Status values: `FIXED` means code + verification exist for the stated slice; `PA
 
 | ID | Gap | Evidence | Dependency | Status |
 | --- | --- | --- | --- | --- |
-| GAP-21 | Installer unsigned and not clean-machine tested | Rebuilt NSIS artifact `Companion-0.1.0-x64.exe` (122,781,868 bytes, SHA-256 `E7F85038...444E0`, V-81), prior unpacked runtime/helper smoke passed (V-77), but signing and clean-machine installation/uninstall/SmartScreen checks remain open. | Owner/VM/G4 | OPEN |
+| GAP-21 | Installer unsigned and not clean-machine tested | Rebuilt NSIS artifact `Companion-0.1.0-x64.exe` (122,837,891 bytes, SHA-256 `32E04C31...43B8E8`, V-83), prior unpacked runtime/helper smoke passed (V-77), but signing and clean-machine installation/uninstall/SmartScreen checks remain open. | Owner/VM/G4 | OPEN |
 | GAP-22 | CI has not run on GitHub | `main` pushed (`9516104`+); remote CI status not yet confirmed. | Owner/CI | OPEN |
 | GAP-23 | No third-party notices in packaged app | PROJECT_STATE known defects. | Release work | OPEN |
 

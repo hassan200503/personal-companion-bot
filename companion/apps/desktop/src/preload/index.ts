@@ -35,6 +35,8 @@ const api = Object.freeze({
   chatGetConversation: (id: string) : Promise<unknown> => ipcRenderer.invoke(ipcChannels.chatGetConversation, sessionToken, id),
   chatSendMessage: (conversationId: string, content: string, channel?: 'voice' | 'text') : Promise<unknown> =>
     ipcRenderer.invoke(ipcChannels.chatSendMessage, sessionToken, conversationId, content, channel),
+  chatDeleteConversation: (id: string): Promise<unknown> => ipcRenderer.invoke(ipcChannels.chatDeleteConversation, sessionToken, id),
+  appCheckUpdates: (): Promise<unknown> => ipcRenderer.invoke(ipcChannels.appCheckUpdates, sessionToken),
   privacyExport: () : Promise<unknown> => ipcRenderer.invoke(ipcChannels.privacyExport, sessionToken),
   privacyDeleteAll: () : Promise<unknown> => ipcRenderer.invoke(ipcChannels.privacyDeleteAll, sessionToken),
   privacyBackupStatus: (backupDir?: string) : Promise<unknown> => ipcRenderer.invoke(ipcChannels.privacyBackupStatus, sessionToken, backupDir),
@@ -65,10 +67,20 @@ const api = Object.freeze({
   memoryClearProfile: (): Promise<unknown> => ipcRenderer.invoke(ipcChannels.memoryClearProfile, sessionToken),
   memoryGetOwner: (): Promise<unknown> => ipcRenderer.invoke(ipcChannels.memoryGetOwner, sessionToken),
   memorySetOwner: (owner: unknown): Promise<unknown> => ipcRenderer.invoke(ipcChannels.memorySetOwner, sessionToken, owner),
+  memoryListProposed: (): Promise<unknown> => ipcRenderer.invoke(ipcChannels.memoryListProposed, sessionToken),
+  memoryApprove: (id: string): Promise<unknown> => ipcRenderer.invoke(ipcChannels.memoryApprove, sessionToken, id),
+  memoryReject: (id: string): Promise<unknown> => ipcRenderer.invoke(ipcChannels.memoryReject, sessionToken, id),
+  emailGetConfig: (): Promise<unknown> => ipcRenderer.invoke(ipcChannels.emailGetConfig, sessionToken),
+  emailSetConfig: (config: unknown): Promise<unknown> => ipcRenderer.invoke(ipcChannels.emailSetConfig, sessionToken, config),
+  emailTestConnection: (config?: unknown): Promise<unknown> => ipcRenderer.invoke(ipcChannels.emailTestConnection, sessionToken, config),
+  emailClearConfig: (): Promise<unknown> => ipcRenderer.invoke(ipcChannels.emailClearConfig, sessionToken),
+  permissionsList: (): Promise<unknown> => ipcRenderer.invoke(ipcChannels.permissionsList, sessionToken),
+  permissionsGrant: (permission: string): Promise<unknown> => ipcRenderer.invoke(ipcChannels.permissionsGrant, sessionToken, permission),
   auditList: (): Promise<unknown> => ipcRenderer.invoke(ipcChannels.auditList, sessionToken),
   voiceGetSettings: (): Promise<unknown> => ipcRenderer.invoke(ipcChannels.voiceGetSettings, sessionToken),
   voiceSetSettings: (settings: unknown): Promise<unknown> => ipcRenderer.invoke(ipcChannels.voiceSetSettings, sessionToken, settings),
   voiceStopSpeaking: (): Promise<unknown> => ipcRenderer.invoke(ipcChannels.voiceStopSpeaking, sessionToken),
+  voiceSpeakChunks: (text: string): Promise<unknown> => ipcRenderer.invoke(ipcChannels.voiceSpeakChunks, sessionToken, text),
   onVoiceTranscript: (cb: (payload: { text: string; final: boolean; engine?: string; confidence?: number }) => void): (() => void) => {
     const handler = (_e: Electron.IpcRendererEvent, payload: { text: string; final: boolean; engine?: string; confidence?: number }) => cb(payload);
     ipcRenderer.on(ipcChannels.voiceTranscript, handler);
@@ -78,6 +90,11 @@ const api = Object.freeze({
     const handler = (_e: Electron.IpcRendererEvent, payload: VoiceEventPayload) => cb(payload);
     ipcRenderer.on(ipcChannels.voiceEvent, handler);
     return () => ipcRenderer.removeListener(ipcChannels.voiceEvent, handler);
+  },
+  onProactiveAlert: (cb: (payload: { id: string; topic: string; message: string; reason: string; channel: string }) => void): (() => void) => {
+    const handler = (_e: Electron.IpcRendererEvent, payload: { id: string; topic: string; message: string; reason: string; channel: string }) => cb(payload);
+    ipcRenderer.on(ipcChannels.proactiveAlert, handler);
+    return () => ipcRenderer.removeListener(ipcChannels.proactiveAlert, handler);
   },
 });
 
