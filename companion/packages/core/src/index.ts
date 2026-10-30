@@ -36,6 +36,8 @@ export * from './media/index.js';
 export * from './proactive/index.js';
 export * from './lifecycle/index.js';
 export * from './voice/greeting.js';
+export * from './voice/personality.js';
+export * from './voice/speech.js';
 export {
   defaultDenylistPolicy,
   EmergencyStop,

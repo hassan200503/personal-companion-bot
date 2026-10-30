@@ -29,6 +29,7 @@ declare global {
     companion: {
       getInfo(): Promise<AppInfo>;
       openExternal(url: string): Promise<void>;
+      openSettings(uri: string): Promise<void>;
       getStartup(): Promise<any>;
       setStartup(enabled: boolean): Promise<any>;
       onboardingGetState(): Promise<any>;
@@ -36,7 +37,7 @@ declare global {
       chatListConversations(): Promise<any[]>;
       chatCreateConversation(title?: string): Promise<any>;
       chatGetConversation(id: string): Promise<any>;
-      chatSendMessage(conversationId: string, content: string): Promise<any>;
+      chatSendMessage(conversationId: string, content: string, channel?: 'voice' | 'text'): Promise<any>;
       privacyExport(): Promise<any>;
       privacyDeleteAll(): Promise<any>;
       privacyBackupStatus(backupDir?: string): Promise<any>;
@@ -54,6 +55,12 @@ declare global {
         osRejectTool(actionHash: string): Promise<any>;
         voiceStart(): Promise<any>;
         voiceStop(): Promise<any>;
+        voiceSpeak(text: string): Promise<any>;
+        voiceListVoices(): Promise<any>;
+        personaGet(): Promise<any>;
+        personaSet(state: unknown): Promise<any>;
+        personaCalibrationAnswer(step: string, answer: string): Promise<any>;
+        personaProactive(conversationId?: string, recentQuestions?: string[]): Promise<any>;
         memoryGetProfile(): Promise<any>;
         memorySetProfile(profile: unknown): Promise<any>;
         memoryClearProfile(): Promise<any>;
@@ -65,7 +72,8 @@ declare global {
         voiceStopSpeaking(): Promise<any>;
         appCheckUpdates(): Promise<any>;
         chatDeleteConversation(id: string): Promise<any>;
-        onVoiceTranscript(cb: (payload: { text: string; final: boolean }) => void): () => void;
+        onVoiceTranscript(cb: (payload: { text: string; final: boolean; engine?: string; confidence?: number }) => void): () => void;
+        onVoiceEvent(cb: (payload: { type: string; state?: string; engine?: string; error?: string; code?: string; text?: string; final?: boolean; confidence?: number; voice?: string; synthesis?: unknown[]; recognitionLanguages?: unknown[] }) => void): () => void;
     };
   }
 }

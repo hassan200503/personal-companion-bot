@@ -1,7 +1,7 @@
 # Requirements Registry (v3 brief)
 
-Last graded: 2026-10-29
-Method: read the implementation, run `npm.cmd run verify` from `companion/` (39 files / 248 tests passed, 0 lint warnings), run the documented Windows runtime/UIA probes, and inspect the Electron main process. Status values are `PASS`, `PARTIAL`, `FAIL`, `BLOCKED`, `MANUAL`, `NOT BUILT`. A row is only `PASS` when the evidence column names a runnable check and its observed result.
+Last graded: 2026-10-30
+Method: read the implementation, run `npm.cmd run verify` from `companion/` (42 files / 286 tests passed, 0 lint warnings), run the documented Windows runtime/UIA/voice probes, and inspect the Electron main process. Status values are `PASS`, `PARTIAL`, `FAIL`, `BLOCKED`, `MANUAL`, `NOT BUILT`. A row is only `PASS` when the evidence column names a runnable check and its observed result.
 
 Baseline evidence: `docs/VERIFICATION_LOG.md` section 14. Safety-slice evidence: section 15. Earlier catalog rows remain in `docs/REQUIREMENTS_MATRIX.md`; this registry is the v3 source of truth.
 
@@ -9,13 +9,13 @@ Baseline evidence: `docs/VERIFICATION_LOG.md` section 14. Safety-slice evidence:
 
 | ID | Acceptance check | Status | Evidence |
 | --- | --- | --- | --- |
-| SC1 | Greeting on every app open, owner name, pronunciation override, <=2 sentences, varied, <=3 s after UI ready, offline, interruptible, mute/quiet hours | PARTIAL | Offline `GreetingComposer` tests cover name, pronunciation markup, variation, mute and quiet hours and the renderer uses it; real audio, editable pronunciation settings and <=3 s startup timing remain unmeasured. |
+| SC1 | Greeting on every app open, owner name, pronunciation override, <=2 sentences, varied, <=3 s after UI ready, offline, interruptible, mute/quiet hours | PARTIAL | Offline `GreetingComposer` tests cover name, pronunciation markup, variation, mute and quiet hours; the renderer sends the greeting to WinRT TTS and audible `speech_started`/`speech_done` events were observed. Editable pronunciation settings, interruptibility and <=3 s startup timing remain unmeasured. |
 | SC2 | 30-prompt persona suite across 3 provider profiles, >=95% rule checks; provider switch loses no memory, plan or confirmation | PARTIAL | Typed cognition is wired into the desktop conversation engine; a deterministic 30-prompt/three-profile suite passes its >=95% normalized-output rules, but provider-switch persistence for plans/confirmations remains open. |
 | SC3 | >=10 app tasks observed and measured; elevated/secure refused with explanation | PARTIAL | Real Notepad UIA feasibility spike returned 106 elements and Calculator process postconditions passed; reusable UIA service, 10-task benchmark and real elevated/secure transitions remain open. |
 | SC4 | Fixture messenger flow: resolve, ambiguity, read-back, policy, send, observe; Sent only when observed; last seen on request | PARTIAL | Fixture messenger tests cover ambiguity, confirmation, observed outgoing state, hidden last-seen and hourly cap; production parser/WhatsApp UI adapter and separate fixture desktop app remain open. |
 | SC5 | Login start, single instance, restart after own crash/hang, never after Stop/Exit/termination, sleep/mic changes, measured idle | PARTIAL | Persisted per-user startup setting, tray enable/disable controls, single-instance lock, live heartbeat/markers and a detached capped supervisor are implemented; real crash/hang app restart, sleep/mic handling and resource measurements remain open. |
-| SC6 | On-device wake word, measured false accepts, visible mic state, no raw audio stored | BLOCKED | G1 approval is required for on-device models/always-listening. The UI no longer auto-starts dictation and explicitly says mic off; start is a visible owner action. No wake word. |
-| SC7 | Simulation proves budget, quiet hours, cooldowns, dismissals reduce frequency; every nudge has a reason | PARTIAL | Proactive engine tests cover reasons, quiet/focus, budgets, cooldowns, dismissals and resettable receptivity; scheduler/storage integration remains open. |
+| SC6 | On-device wake word, measured false accepts, visible mic state, no raw audio stored | BLOCKED | G1 approval is required for on-device models/always-listening. The visible mic state and no-raw-audio design exist, and dictation auto-starts only when the Chat tab is open (with an opt-out); no wake word or false-accept measurement. |
+| SC7 | Simulation proves budget, quiet hours, cooldowns, dismissals reduce frequency; every nudge has a reason | PARTIAL | Proactive engine tests cover reasons, quiet/focus, budgets, cooldowns, dismissals and resettable receptivity; the renderer now schedules model-backed questions with a daily cap and quiet hours, but durable reason records and dismissal feedback remain open. |
 | SC8 | Local match first with ranked disambiguation, fallback chain, quota tracking, no scraping | PARTIAL | Ranked local resolver, ambiguity output, official fallback interface and daily quota tests exist; incremental indexing, live adapters and playback observation remain open. |
 | SC9 | Evidence thresholds, approval before facts, no sensitive-trait inference, weekly review, self-healing recipes | PARTIAL | Evidence/sensitive-trait/third-party guards, approval inbox and rejection lookup are tested; consolidation integration, weekly review and recipes remain open. |
 | SC10 | Class 4 blocked, Class 3 enforced, injection corpus cannot act, locked-screen commands ignored | PARTIAL | Policy/guard block Class 4, force Class 3 confirmation, deny untrusted/system sources, inspect locked/secure desktop and sensitive targets, and IPC defaults to safe permissions with no auto-confirm. The seven-origin injection corpus passes core tests; runtime producer wiring, path-level IPC tests and real integrity/lock transitions remain open. |
@@ -37,13 +37,13 @@ Baseline evidence: `docs/VERIFICATION_LOG.md` section 14. Safety-slice evidence:
 
 | ID | Acceptance check | Status | Evidence |
 | --- | --- | --- | --- |
-| V1 | Greeting uses stored name and pronunciation, offline | PARTIAL | Composer is integrated into the renderer and tested for name, pronunciation SSML, variation, mute and quiet hours; real audio observation remains open. |
-| V2 | Greeting never delays startup | PARTIAL | Greeting runs after `loadAll`/owner load and is not awaited; no timed startup measurement. |
-| V3 | Barge-in works | PARTIAL | Renderer calls `voiceStopSpeaking` on final/interim voice input and has a "stop everything" control; no automated test. |
-| V4 | Listening pauses while speaking | PARTIAL | Renderer tracks `speaking` but the Windows recognizer keeps running. |
-| V5 | Wake word on-device, memory buffer only | BLOCKED | G1. Current code uses push-to-start dictation, not a wake word. |
-| V6 | No raw audio on disk (scan) | PARTIAL | PowerShell recognizer streams text; no audio file is written by the current code, but no automated scan exists. |
-| V7 | Mute stops capture | PARTIAL | Mute stops active recognition and TTS in the renderer; main process has no persistent mute setting, and the greeting checks renderer mute only once. |
+| V1 | Greeting uses stored name and pronunciation, offline | PARTIAL | Composer is integrated into the renderer and tested for name, pronunciation SSML, variation, mute and quiet hours; WinRT spoke the greeting audibly (`speech_started`/`speech_done`), but editable pronunciation remains open. |
+| V2 | Greeting never delays startup | PARTIAL | Greeting runs after `loadAll`/owner load and is not awaited; manual CDP smoke showed the UI ready before speech began, but no timed startup measurement. |
+| V3 | Barge-in works | PARTIAL | While speaking, final/interim voice input can issue stop commands and the UI/global emergency stop calls `voiceStopSpeaking`; no automated microphone test. |
+| V4 | Listening pauses while speaking | PARTIAL | The recognizer keeps running for stop commands, but non-interrupt transcripts are ignored while speaking and for 1.2 s after TTS ends; no automated echo test. |
+| V5 | Wake word on-device, memory buffer only | BLOCKED | G1. Current code uses Chat-tab auto-start or explicit start, not a wake word. |
+| V6 | No raw audio on disk (scan) | PARTIAL | The helper streams recognition events and the app writes no audio file; no automated raw-audio scan exists. |
+| V7 | Mute stops capture | PARTIAL | Mute calls `voiceStop` and stops active TTS in the renderer; the preference is not persisted and main-process TTS is not persistently gated. |
 | V8 | Locked session ignores commands | PARTIAL | Main-process probe and guard deny locked/secure desktop; probe failure fails closed. Real lock transitions are not exercised by tests. |
 | V9 | Speak-safe rule enforced | PARTIAL | Safe normalization is applied in renderer speech and the `os.speak` tool; dedicated Electron audio-content E2E remains open. |
 

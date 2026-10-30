@@ -1,9 +1,9 @@
 # Project State
 
-Last updated: 2026-10-29
+Last updated: 2026-10-30
 Brief: `docs/AGENT_BRIEF.md` (v3 master brief, adopted 2026-10-29). The previous handoff brief is archived at `docs/archive/AGENT_BRIEF-v1-handoff.md`.
-Current milestone: M0/M1 transition, safety hardening first
-Status: Core hardening advanced: browser-safe greeting/safe-speech integration, ranked media, fixture messaging, proactive policy, proposal-only learning, live typed cognition, persona regression coverage, reusable UIA probing, integrity probing, persisted startup controls, single-instance lock, heartbeat/marker protocol, detached capped supervisor, emergency-stop wiring, postcondition enforcement, durable capability observation tracking, immutable policy bundle, clipboard restoration helper and rejection lookup are implemented. Latest full verify passes 39 files / 248 tests. Runtime GUI E2E and several production adapters remain open.
+Current milestone: M1 voice-first companion slice
+Status: Core hardening advanced: browser-safe greeting/safe-speech integration, ranked media, fixture messaging, proactive policy, proposal-only learning, live typed cognition, persona regression coverage, reusable UIA probing, integrity probing, persisted startup controls, single-instance lock, heartbeat/marker protocol, detached capped supervisor, emergency-stop wiring, postcondition enforcement, durable capability observation tracking, immutable policy bundle, clipboard restoration helper and rejection lookup are implemented. The companion now has a compiled Windows speech helper, WinRT speech with SAPI fallback, live voice conversation wiring, persona calibration and model-backed proactive questions. Latest full verify passes 42 files / 286 tests and the NSIS installer was rebuilt with the voice helper. Real WinRT microphone recognition remains blocked by the Windows speech privacy setting; SAPI fallback quality is poor. Runtime GUI E2E and several production adapters remain open.
 
 ## What this project is
 
@@ -35,6 +35,9 @@ The legacy bot is separate and must not be changed or restarted without the owne
 - WhatsApp returns typed/sent/verified honestly; no "Sent" claim without observation.
 - `playMedia` opens the official search page instead of scraping HTML.
 - Startup greeting with owner name and time of day; explicit Start listening instead of auto-dictation.
+- Voice-first desktop slice: compiled `CompanionVoice.exe` bundled under `resources/voice`, WinRT synthesis/recognition with SAPI fallback, audible spoken replies, visible mic state, mute/quiet hours, start/stop and stop-speaking controls.
+- Persona slice: persisted tone/name/boundaries calibration, companion prompt injection on every chat turn, voice calibration answers, and model-backed proactive questions with quiet hours, daily cap and offline fallback.
+- Packaged runtime evidence: the unpacked app auto-started the bundled voice helper from `resources/voice` after the Chat tab opened; the helper was terminated with the app tree.
 
 ## Safety slice status
 
@@ -43,8 +46,8 @@ The legacy bot is separate and must not be changed or restarted without the owne
 3. FIXED: WhatsApp honesty and risk class; observation reader still absent.
 4. FIXED: YouTube HTML scraping removed.
 5. PARTIAL: lock/secure desktop and sensitive-target guard; no real integrity-level probe.
-6. PARTIAL: greeting; no pronunciation, variation, quiet hours or startup-latency proof.
-7. PARTIAL: explicit mic control; no wake word (G1) and mute is not persisted.
+6. PARTIAL: greeting is composed, respects mute/quiet hours and was audibly spoken through WinRT; pronunciation overrides and startup-latency measurement remain open.
+7. PARTIAL: visible mic state, explicit pause/mute and Chat-tab auto-start exist; no wake word (G1), and mute is not persisted across restarts.
 
 ## Open critical work
 
@@ -59,6 +62,7 @@ The legacy bot is separate and must not be changed or restarted without the owne
 | Item | Reason | Unblock condition |
 | --- | --- | --- |
 | Wake word / always-listening default (SC6, V5) | G1 requires owner approval for on-device speech models and always-listening | Owner answers G1 |
+| Live WinRT microphone recognition (V3/V4/V6) | Windows speech privacy has not been accepted, so `SpeechRecognizer` fails with `speech_privacy`; the app falls back to low-accuracy SAPI | Owner enables Settings > Privacy & security > Speech, then speaks during a live test |
 | Vision fallback / screenshots leaving the PC (O8) | G2 | Owner answers G2 |
 | Real WhatsApp sending and account risk (SC4, G3) | G3 | Owner answers G3 and provides a test account |
 | UIA/elevated control beyond standard user (G4) | G4 | Owner answers G4 |
@@ -66,9 +70,9 @@ The legacy bot is separate and must not be changed or restarted without the owne
 
 ## Next three tasks
 
-1. Wire every screen/audio/file producer to `routeExternalContent`, then add an Electron E2E test for confirmation/denial/locked screen.
-2. Integrate the reusable UIA probe/capability store with typed adapters and a measured 10-task benchmark.
-3. Add persistent supervisor restart behavior, kill tests and resource/soak measurements.
+1. Run a live WinRT microphone test after the owner enables Windows speech privacy; verify recognition, calibration answers, barge-in/stop, quiet hours and no raw-audio files.
+2. Wire every screen/audio/file producer to `routeExternalContent`, then add an Electron E2E test for confirmation/denial/locked screen.
+3. Integrate the reusable UIA probe/capability store with typed adapters and a measured 10-task benchmark.
 
 ## Commands that work
 
@@ -98,13 +102,15 @@ npm run package
 
 ## Known defects
 
-- No automated Electron GUI test; startup/heartbeat and bundled real speech/Calculator smoke passed, but confirmation UI, media UI and lock transitions are not yet observed end-to-end.
+- No automated Electron GUI test; manual CDP smoke covered startup, Chat-tab voice auto-start, persona calibration, proactive questions and typed chat, but confirmation UI, media UI and lock transitions are not yet observed end-to-end.
 - Real Windows lock/secure-desktop/elevated target transitions were not exercised; the foreground token-integrity probe and lifecycle markers are implemented and smoke-tested, but runtime security transition evidence is pending.
 - `sendWhatsAppMessage` still has no UI-automation observation; it correctly reports `typed_but_unconfirmed`, but `sent/verified` can never become true yet.
-- Greeting composer is integrated into the renderer with persisted mute/quiet-hour settings; real audio output, editable pronunciation settings and <=3 s UI-ready timing remain unmeasured.
-- Mute is renderer state only; main-process TTS is not persistently gated.
+- Greeting composer is integrated into the renderer with persisted mute/quiet-hour settings and was audibly spoken through WinRT; editable pronunciation and <=3 s UI-ready timing remain unmeasured.
+- Mute is renderer state only; it stops the active listener and TTS, but the preference is not persisted and main-process TTS is not independently gated.
+- WinRT microphone recognition is blocked by the Windows speech privacy setting on this machine; the SAPI fallback starts but misrecognized loopback TTS (for example, one token at 0.003 confidence), so it is not yet a usable conversation input.
+- The voice helper and build script are Windows-only and require the Windows SDK `Windows.winmd` at build time; the packaged app ships the compiled helper and falls back if it is missing.
 - Injection corpus covers seven external origins and classes 1-3; fixture messenger, ranked media, proactive and learning-policy tests now run. Desktop chat no longer copies conversation content into learning by default, but producer wiring, kill tests and soak remain open.
-- NSIS packaging produced `apps/desktop/release/Companion-0.1.0-x64.exe` (latest SHA-256 recorded in V-64), and packaged runtime/supervisor external-termination smokes passed in V-65/V-69; the installer is unsigned, uses the default icon, and has not been installed on a clean machine; SmartScreen/uninstall/first-run remain unverified.
+- NSIS packaging produced `apps/desktop/release/Companion-0.1.0-x64.exe` (2026-10-30 SHA-256 `45CDA73F2673822628F1C736162789B017CF31768E8ABF05B8057CF4C7621EBF`), and packaged runtime/supervisor external-termination smokes passed in V-65/V-69 plus the new voice-helper smoke in V-77; the installer is unsigned, uses the default icon, and has not been installed on a clean machine; SmartScreen/uninstall/first-run remain unverified.
 - CI has not run on GitHub because the repository has not been pushed.
 - Logger redaction does not cover secrets embedded in free-text messages or error strings.
 - Runtime memory and idle CPU were not measured.

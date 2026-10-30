@@ -1,7 +1,7 @@
 # Gap List (v3 brief)
 
 Baseline: 2026-10-29. Graded against `docs/REQUIREMENTS.md`.
-Latest verification: `npm.cmd run verify` from `companion/` passed 0 lint errors/warnings, clean TypeScript, 39 test files / 248 tests, and both builds. See `docs/VERIFICATION_LOG.md` section 30.
+Latest verification: `npm.cmd run verify` from `companion/` passed 0 lint errors/warnings, clean TypeScript, 42 test files / 286 tests, and both builds. See `docs/VERIFICATION_LOG.md` section 31.
 Status values: `FIXED` means code + verification exist for the stated slice; `PARTIAL` means some behavior is present but the acceptance check is not fully met; `OPEN` means no implementation.
 
 ## Critical
@@ -12,19 +12,20 @@ Status values: `FIXED` means code + verification exist for the stated slice; `PA
 | GAP-02 | WhatsApp reports `sent: true` without observing a sent message; tool is risk class 2 | Now returns `{typed, sent, verified}`; `sent/verified` stay false without observation; class 3 + `os.message.send` + confirmation. | GAP-01 | FIXED (honesty semantics; observation still absent) |
 | GAP-03 | Media playback scrapes YouTube HTML, which the brief forbids | Scraping removed; official search page opened and `played: false` returned until owner selection. | None. | FIXED |
 | GAP-04 | No locked-screen, elevated-window or sensitive-window guard | Probe now reads foreground token integrity, locked/secure desktop and target denylist; real elevated/locked transitions remain manual. | GAP-01 | PARTIAL |
-| GAP-05 | No greeting at app open | `composeGreeting` is integrated into the renderer with persisted mute/quiet-hour settings; audio observation and latency instrumentation remain open. | None. | PARTIAL |
+| GAP-05 | No greeting at app open | `composeGreeting` is integrated into the renderer with persisted mute/quiet-hour settings; WinRT TTS audibly emitted `speech_started`/`speech_done`. Pronunciation overrides and latency instrumentation remain open. | None. | PARTIAL |
 
 ## High
 
 | ID | Gap | Evidence | Dependency | Status |
 | --- | --- | --- | --- | --- |
 | GAP-06 | No persona contract, prompt compiler, Turn Decision or style normalizer | L0-L7 prompt compiler, TurnDecision validator, live typed cognition and a 30-prompt/three-profile persona suite are tested; plan/confirmation handoff and provider-switch persistence remain open. | None. | PARTIAL |
-| GAP-07 | Continuous dictation starts when a chat is active; no wake word, no explicit persistent mute | Auto-start removed; UI has explicit Start/Pause and a visible mic-off message; mute still renderer-only. | G1 for wake word; mute can be finished now. | PARTIAL |
+| GAP-07 | Continuous dictation can start without a wake word; mute is not persisted | Dictation auto-starts only when the Chat tab opens, can be disabled in voice settings, and the UI shows a visible listening state plus Pause/Mute/Stop. No wake word; mute remains renderer-only. | G1 for wake word; mute persistence can be finished now. | PARTIAL |
 | GAP-08 | No media ranking or disambiguation | Ranked resolver is used by `playMedia` and returns candidates for close matches; indexing, provider adapters and playback observation remain open. | GAP-03 | PARTIAL |
-| GAP-09 | No proactive engine or reason records | Core engine tests budgets, quiet hours, cooldowns, dismissal and reasons; scheduler/storage/UI integration remains open. | None. | PARTIAL |
+| GAP-09 | No proactive engine or reason records | Core engine tests budgets, quiet hours, cooldowns, dismissal and reasons; the renderer now schedules model-backed questions with a daily cap and quiet hours, but durable reason records and dismissal feedback remain open. | None. | PARTIAL |
 | GAP-10 | No evidence thresholds, sensitive-trait guard, rejection suppression or weekly review | Learning policy rejects weak evidence, sensitive traits and third-party content; repository-backed rejection lookup is tested; desktop conversation learning is disabled by default. Consolidation, proposal integration and weekly review remain open. | None. | PARTIAL |
 | GAP-11 | No single-instance lock, supervisor, heartbeat or stop marker | Single-instance lock, persisted startup controls, live heartbeat/crash/owner-stop markers and detached capped supervisor exist; fixture restart smoke passed, but real crash/hang app restart, sleep/mic handling and resource measurements remain open. | None. | PARTIAL |
 | GAP-12 | No injection corpus or screen-text trust boundary test | `routeExternalContent` labels web, email, file, screen, filename, notification and audio content as `untrusted_content`; corpus test denies classes 1-3. Runtime producer wiring and Electron E2E remain open. | GAP-01 | PARTIAL |
+| GAP-24 | WinRT live recognition is blocked by Windows speech privacy; SAPI fallback is inaccurate | `SpeechRecognizer` returns `speech_privacy`; the app shows the reason and a settings button, then falls back to SAPI, which misrecognized loopback TTS (one token at 0.003 confidence). No raw audio is written. | Owner enables Settings > Privacy & security > Speech and performs a live mic test | PARTIAL (owner action) |
 
 ## Medium
 
@@ -43,7 +44,7 @@ Status values: `FIXED` means code + verification exist for the stated slice; `PA
 
 | ID | Gap | Evidence | Dependency | Status |
 | --- | --- | --- | --- | --- |
-| GAP-21 | Installer unsigned and not clean-machine tested | NSIS artifact and unpacked packaged-runtime smoke passed (V-64/V-65), but signing and clean-machine installation/uninstall/SmartScreen checks remain open. | Owner/VM/G4 | OPEN |
+| GAP-21 | Installer unsigned and not clean-machine tested | Rebuilt NSIS artifact `Companion-0.1.0-x64.exe` (122,764,179 bytes, SHA-256 `45CDA73F...7621EBF`), unpacked runtime smoke and bundled-voice-helper smoke passed (V-77), but signing and clean-machine installation/uninstall/SmartScreen checks remain open. | Owner/VM/G4 | OPEN |
 | GAP-22 | CI has not run on GitHub | Repository not pushed. | Owner push decision | OPEN |
 | GAP-23 | No third-party notices in packaged app | PROJECT_STATE known defects. | Release work | OPEN |
 
@@ -55,4 +56,5 @@ Status values: `FIXED` means code + verification exist for the stated slice; `PA
 4. GAP-07, GAP-09, GAP-10: persistent voice controls, scheduler/storage, rejection suppression and weekly review.
 5. GAP-11, GAP-17, GAP-19: supervisor, global emergency stop, kill tests and soak.
 6. GAP-16, GAP-18: real messenger observation/clipboard-safe UIA paths.
-9. GAP-19 to GAP-23: soak, verification and release.
+7. GAP-24: live WinRT speech test, recognition quality and mic/echo behavior after the owner enables Windows speech privacy.
+8. GAP-19 to GAP-23: soak, verification and release.

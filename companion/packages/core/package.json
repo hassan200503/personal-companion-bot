@@ -16,6 +16,8 @@
     "./providers": "./src/providers/index.ts",
     "./conversation": "./src/conversation/index.ts",
     "./voice/greeting": "./src/voice/greeting.ts",
+    "./voice/personality": "./src/voice/personality.ts",
+    "./voice/speech": "./src/voice/speech.ts",
     "./cognition/style-normalizer": "./src/cognition/style-normalizer.ts"
   },
   "dependencies": {

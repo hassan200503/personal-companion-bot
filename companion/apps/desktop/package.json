@@ -7,7 +7,8 @@
   "license": "UNLICENSED",
   "main": "dist/main/index.js",
   "scripts": {
-    "build": "node esbuild.mjs && vite build",
+    "build": "npm run build:voice && node esbuild.mjs && vite build",
+    "build:voice": "node scripts/build-voice.mjs",
     "start": "electron .",
     "package": "npm run build && electron-builder --win nsis --x64"
   },
@@ -38,6 +39,15 @@
     "directories": {
       "output": "release"
     },
+    "extraResources": [
+      {
+        "from": "resources/voice",
+        "to": "voice",
+        "filter": [
+          "**/*"
+        ]
+      }
+    ],
     "files": [
       "dist/**/*",
       "package.json",
