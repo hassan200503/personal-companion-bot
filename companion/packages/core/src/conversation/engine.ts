@@ -18,6 +18,7 @@ import type {
 import { ConversationError } from './contracts.js';
 import { DecisionOrchestrator, type DecisionSource } from '../cognition/decision-orchestrator.js';
 import { buildContextPacket } from '../cognition/prompt-compiler.js';
+import { ResponseCache } from './response-cache.js';
 
 export { ConversationError } from './contracts.js';
 
@@ -40,6 +41,7 @@ export class DefaultConversationEngine implements ConversationEngine {
   private memoryRetriever?: (query: string) => Promise<string[]>;
   private memoryRecorder?: (user: string, assistant: string) => Promise<void>;
   private readonly cognition?: ConversationEngineOptions['cognition'];
+  private readonly responseCache: ResponseCache;
 
   constructor(options: ConversationEngineOptions) {
     this.router = options.router;
@@ -54,6 +56,7 @@ export class DefaultConversationEngine implements ConversationEngine {
     this.memoryRecorder = options.memoryRecorder;
     this.cognition = options.cognition;
     this.conversationStore = options.conversationStore;
+    this.responseCache = new ResponseCache(100, 5 * 60 * 1000); // 100 entries, 5 min TTL
     if (this.conversationStore) {
       for (const c of this.conversationStore.loadAll()) {
         this.conversations.set(c.id, c);
@@ -163,6 +166,24 @@ export class DefaultConversationEngine implements ConversationEngine {
 
     const messages = this.buildMessages(conv, memorySnippets, systemPrompt);
 
+    // Check cache for common queries
+    const cachedResponse = this.responseCache.get(userContent, systemPrompt);
+    if (cachedResponse) {
+      const assistantMsg: ConversationMessage = {
+        id: this.idFactory(),
+        role: 'assistant',
+        content: cachedResponse,
+        createdAt: this.now().toISOString(),
+        model: model,
+        providerId: 'cache',
+        status: 'completed',
+      };
+      conv.messages.push(assistantMsg);
+      conv.updatedAt = assistantMsg.createdAt;
+      this.persistMessage(conv, assistantMsg);
+      return assistantMsg;
+    }
+
     let response: ChatCompletionResponse;
     try {
       if (this.cognition) {
@@ -197,6 +218,9 @@ export class DefaultConversationEngine implements ConversationEngine {
         error instanceof Error ? error.message : String(error)
       );
     }
+
+    // Cache the response for future use
+    this.responseCache.set(userContent, response.content, systemPrompt);
 
     this.degraded = false;
 
