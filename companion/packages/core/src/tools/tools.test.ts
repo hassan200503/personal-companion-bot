@@ -366,6 +366,82 @@ describe('tool executor more', () => {
     expect(result.status).toBe('failed');
     expect(result.error).toBe('postcondition_unverified');
   });
+
+  it('requests read-back for voice class-2 actions', async () => {
+    const reg = new DefaultToolRegistry();
+    const tool = {
+      name: 'os.open',
+      version: '1.0.0',
+      description: 'open',
+      inputSchema: z.object({ target: z.string() }),
+      outputSchema: z.object({ ok: z.boolean() }),
+      requiredPermissions: [],
+      dataClassification: 'personal' as const,
+      riskClass: 2 as const,
+      reversible: true,
+      timeoutMs: 1000,
+      cancellable: false,
+      audit: 'metadata' as const,
+      platforms: ['all'] as const,
+      execute: async () => ({ ok: true }),
+    };
+    reg.register(tool as unknown as ToolDefinition<unknown, unknown>);
+    const audit = new InMemoryAuditLogger();
+    const conf = new InMemoryConfirmationManager();
+    const exec = new DefaultToolExecutor(reg, new DefaultPolicyEngine(), conf);
+    const ctx: ToolExecutionContext = {
+      signal: new AbortController().signal,
+      platform: process.platform,
+      permissions: new Set(),
+      audit,
+      confirmation: conf,
+      now: () => new Date(),
+      environment: { screenLocked: false, secureDesktop: false }
+    };
+    const result = await exec.execute({ toolName: 'os.open', input: { target: 'notepad' }, trust: 'trusted', intentSource: 'owner_voice' }, ctx);
+    expect(result.status).toBe('needs_read_back');
+    expect(result.readBackText).toContain('notepad');
+    expect(result.actionHash).toBeDefined();
+  });
+
+  it('executes after read-back confirmation', async () => {
+    const reg = new DefaultToolRegistry();
+    const tool = {
+      name: 'os.open',
+      version: '1.0.0',
+      description: 'open',
+      inputSchema: z.object({ target: z.string() }),
+      outputSchema: z.object({ ok: z.boolean() }),
+      requiredPermissions: [],
+      dataClassification: 'personal' as const,
+      riskClass: 2 as const,
+      reversible: true,
+      timeoutMs: 1000,
+      cancellable: false,
+      audit: 'metadata' as const,
+      platforms: ['all'] as const,
+      execute: async () => ({ ok: true }),
+    };
+    reg.register(tool as unknown as ToolDefinition<unknown, unknown>);
+    const audit = new InMemoryAuditLogger();
+    const conf = new InMemoryConfirmationManager();
+    const exec = new DefaultToolExecutor(reg, new DefaultPolicyEngine(), conf);
+    const ctx: ToolExecutionContext = {
+      signal: new AbortController().signal,
+      platform: process.platform,
+      permissions: new Set(),
+      audit,
+      confirmation: conf,
+      now: () => new Date(),
+      environment: { screenLocked: false, secureDesktop: false }
+    };
+    const first = await exec.execute({ toolName: 'os.open', input: { target: 'notepad' }, trust: 'trusted', intentSource: 'owner_voice' }, ctx);
+    expect(first.status).toBe('needs_read_back');
+    const hash = first.actionHash!;
+    conf.confirm(hash);
+    const second = await exec.execute({ toolName: 'os.open', input: { target: 'notepad' }, trust: 'trusted', intentSource: 'owner_voice', confirmationHash: hash }, ctx);
+    expect(second.status).toBe('completed');
+  });
 });
 
 

@@ -8,6 +8,9 @@
  */
 
 export type VoiceEngine = 'gemini' | 'winrt' | 'sapi' | 'powershell' | 'none';
+
+export { SpeakerVerification } from './speaker-verification.js';
+export type { SpeakerVerificationConfig, VerificationResult } from './speaker-verification.js';
 export type VoiceState = 'off' | 'starting' | 'listening' | 'thinking' | 'speaking' | 'paused' | 'error';
 export type VoiceFailureCode =
   | 'speech_privacy'
@@ -42,6 +45,7 @@ export interface VoiceSettings {
   engine: 'auto' | 'winrt' | 'sapi';
   listenWhenUnfocused: boolean;
   cloudSpeechConsent: boolean;
+  speakerVerificationEnabled?: boolean;
   recentGreetings?: string[];
 }
 
@@ -154,6 +158,7 @@ export function normalizeVoiceSettings(raw: unknown): VoiceSettings {
     engine,
     listenWhenUnfocused: record.listenWhenUnfocused === true,
     cloudSpeechConsent: record.cloudSpeechConsent === true,
+    speakerVerificationEnabled: record.speakerVerificationEnabled === true,
     recentGreetings: recent
   };
 }

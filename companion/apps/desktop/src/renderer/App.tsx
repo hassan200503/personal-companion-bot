@@ -93,7 +93,7 @@ export default function App() {
   const [auditLogs, setAuditLogs] = useState<any[]>([]);
   const [, setUpdateInfo] = useState<any>(null);
   const [muted, setMuted] = useState(false);
-  const [pendingAction, setPendingAction] = useState<{ actionHash: string; toolName: string; input: any } | null>(null);
+  const [pendingAction, setPendingAction] = useState<{ actionHash: string; toolName: string; input: any; readBackText?: string; pendingVoiceConfirmation?: boolean } | null>(null);
   const [owner, setOwner] = useState<any>({});
   const [ownerLoaded, setOwnerLoaded] = useState(false);
   const [speaking, setSpeaking] = useState(false);
@@ -755,6 +755,8 @@ export default function App() {
           const openResolved = osResult.result?.result?.resolved || osResult.input?.target;
           const summary = status === 'needs_confirmation'
             ? `I need your explicit confirmation before I do that. Review the action below; nothing has been sent or changed yet.`
+            : status === 'needs_read_back'
+              ? `Say "yes" to proceed or "no" to cancel. ${osResult.result?.readBackText ?? ''}`
             : status === 'denied'
               ? `I did not run that. ${osResult.result?.error ?? 'The action was blocked.'}`
             : status === 'failed'
@@ -795,6 +797,8 @@ export default function App() {
           setMessages((prev) => [...prev, userMsg, assistantMsg]);
           if (status === 'needs_confirmation' && osResult.result?.actionHash) {
             setPendingAction({ actionHash: osResult.result.actionHash, toolName: osResult.toolName, input: osResult.input });
+          } else if (status === 'needs_read_back' && osResult.result?.actionHash) {
+            setPendingAction({ actionHash: osResult.result.actionHash, toolName: osResult.toolName, input: osResult.input, readBackText: osResult.result.readBackText, pendingVoiceConfirmation: true });
           } else {
             setPendingAction(null);
           }
@@ -1222,6 +1226,9 @@ export default function App() {
 
   function pendingSummary(): string {
     if (!pendingAction) return '';
+    if (pendingAction.pendingVoiceConfirmation) {
+      return pendingAction.readBackText || `Say "yes" to proceed with ${pendingAction.toolName}.`;
+    }
     if (pendingAction.toolName === 'os.call') {
       return `Call ${pendingAction.input?.number}? This opens the dialer or Phone Link. I will not claim the call connected.`;
     }

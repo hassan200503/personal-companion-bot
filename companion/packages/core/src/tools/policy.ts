@@ -111,6 +111,9 @@ export class DefaultPolicyEngine implements PolicyEngine {
       tool.requiresConfirmation === true ||
       tool.riskClass >= 3;
 
+    // Read-back required for voice class-2+ actions
+    const readBackRequired = authorization.readBackRequired;
+
     // action hash for confirmation binding
     const actionHash = createHash('sha256')
       .update(tool.name)
@@ -119,6 +122,6 @@ export class DefaultPolicyEngine implements PolicyEngine {
       .update(String(Date.now()))
       .digest('hex');
 
-    return { allowed: true, requiresConfirmation, actionHash };
+    return { allowed: true, requiresConfirmation, readBackRequired, actionHash };
   }
 }

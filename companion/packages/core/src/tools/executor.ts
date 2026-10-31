@@ -32,6 +32,13 @@ export class DefaultToolExecutor implements ToolExecutor {
     private readonly confirmation: ConfirmationManager
   ) {}
 
+  private formatReadBack(toolName: string, input: unknown): string {
+    const record = input !== null && typeof input === 'object' ? (input as Record<string, unknown>) : {};
+    const target = record.target as string || record.app as string || record.contact as string || record.url as string || record.command as string || '';
+    const action = toolName.replace('os.', '').replace('email.', '').replace('whatsapp.', '');
+    return `I will ${action} ${target || 'this action'}. Say yes to proceed.`;
+  }
+
   async execute(request: ToolCallRequest, ctx: ToolExecutionContext): Promise<ToolExecutionResult> {
     const tool = this.registry.get(request.toolName, request.toolVersion);
     if (!tool) {
@@ -44,6 +51,14 @@ export class DefaultToolExecutor implements ToolExecutor {
     if (!decision.allowed) {
       ctx.audit.record({ action: `tool:${tool.name}`, outcome: 'denied', detail: { reason: decision.reason }, createdAt: ctx.now().toISOString() });
       return { status: 'denied', error: decision.reason, actionHash: decision.actionHash };
+    }
+
+    // read-back flow for voice class-2 actions
+    if (decision.readBackRequired && !request.confirmationHash) {
+      const pending = this.confirmation.createPending(tool.name, tool.version, request.input);
+      const readBackText = this.formatReadBack(tool.name, request.input);
+      ctx.audit.record({ action: `tool:${tool.name}`, outcome: 'needs_read_back', detail: { actionHash: pending.actionHash }, createdAt: ctx.now().toISOString() });
+      return { status: 'needs_read_back', actionHash: pending.actionHash, readBackText };
     }
 
     // confirmation flow

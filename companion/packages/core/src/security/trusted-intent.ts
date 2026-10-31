@@ -55,7 +55,7 @@ export class TrustedIntentGuard {
       allowed: true,
       requiresConfirmation: true,
       explicitYesRequired: unusual,
-      readBackRequired: true,
+      readBackRequired: false, // Class 3 uses confirmation flow, not read-back
     };
   }
 }

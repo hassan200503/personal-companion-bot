@@ -97,6 +97,7 @@ export interface ToolCallRequest {
 export interface ToolPolicyDecision {
   allowed: boolean;
   requiresConfirmation: boolean;
+  readBackRequired?: boolean;
   reason?: string;
   actionHash?: string;
 }
@@ -113,9 +114,10 @@ export interface PolicyEngine {
 }
 
 export interface ToolExecutionResult {
-  status: 'completed' | 'denied' | 'needs_confirmation' | 'failed' | 'duplicate';
+  status: 'completed' | 'denied' | 'needs_confirmation' | 'needs_read_back' | 'failed' | 'duplicate';
   result?: unknown;
   actionHash?: string;
+  readBackText?: string;
   error?: string;
 }
 

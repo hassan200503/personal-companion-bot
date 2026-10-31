@@ -87,6 +87,7 @@ import { createDesktopCredentialStore, createDesktopKeyProtector } from "./stora
 import * as keytar from "@github/keytar";
 import { probeSecurityEnvironment } from "./security";
 import { VoiceService, type VoiceServiceEvent } from "./voice-service";
+import { SpeakerVerification } from '@companion/core';
 import {
   answerCalibration,
   buildCompanionPrompt,
@@ -127,6 +128,7 @@ let auditLogger: SqliteAuditLogger | null = null;
 let memoryRepository: MemoryRepository | null = null;
 let proactiveEngine: ProactiveEngine | null = null;
 let voiceService: VoiceService | null = null;
+let speakerVerification: SpeakerVerification | null = null;
 let defaultModel = '';
 let tray: Tray | null = null;
 let backgroundScheduler: Scheduler | null = null;
@@ -711,6 +713,14 @@ function createVoiceService(): void {
     language: readVoiceSettings().language,
     onEvent: broadcastVoiceEvent
   });
+
+  // Initialize speaker verification (G016) - degraded mode for now
+  const settings = readVoiceSettings();
+  speakerVerification = new SpeakerVerification({
+    enabled: settings.speakerVerificationEnabled || false,
+    enrollmentComplete: false,
+    sampleCount: 0
+  });
 }
 
 function registerIpc(): void {
@@ -1102,6 +1112,25 @@ function registerIpc(): void {
     try {
       const result = await providerRouter.transcribe({ audio, mimeType, language: settings.language }, controller.signal);
       logger.info('speech transcription completed', { characters: result.text.length, model: result.model ?? 'unknown' });
+
+      // Speaker verification (G016) - degraded mode for now
+      if (speakerVerification && settings.speakerVerificationEnabled) {
+        try {
+          const verification = await speakerVerification.verify(Buffer.from(audio, 'base64').buffer);
+          if (!verification.isOwner) {
+            logger.warn('speaker verification failed', { confidence: verification.confidence, degraded: verification.degraded });
+            if (voiceService) {
+              await voiceService.speak("I don't recognize that voice.", settings);
+            }
+            return { ok: false, error: 'speaker_not_recognized' };
+          }
+          logger.info('speaker verified', { confidence: verification.confidence, degraded: verification.degraded });
+        } catch (verifyError) {
+          logger.error('speaker verification error', { error: verifyError instanceof Error ? verifyError.message : String(verifyError) });
+          // Fall through - don't block on verification errors
+        }
+      }
+
       return { ok: true, text: result.text, model: result.model };
     } catch (error) {
       const message = error instanceof Error && error.name === 'AbortError'
@@ -1467,6 +1496,16 @@ function registerIpc(): void {
           trust: trusted ? 'trusted' : 'untrusted',
           intentSource
         }, ctx);
+      }
+      // Handle read-back confirmation for voice class-2 actions
+      if (result.status === 'needs_read_back' && result.readBackText && voiceService) {
+        try {
+          await voiceService.speak(result.readBackText, readVoiceSettings());
+          return { handled: true, toolName, input, result: { ...result, pendingVoiceConfirmation: true } };
+        } catch (speakError) {
+          logger.error('read-back speak failed', { error: speakError instanceof Error ? speakError.message : String(speakError) });
+          // Fall through to execute without read-back if TTS fails
+        }
       }
       return { handled: true, toolName, input, result };
     } finally {

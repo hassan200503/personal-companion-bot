@@ -40,6 +40,7 @@ export * from './voice/segmenter.js';
 export * from './voice/greeting.js';
 export * from './voice/personality.js';
 export * from './voice/speech.js';
+export * from './voice/speaker-verification.js';
 export {
   defaultDenylistPolicy,
   EmergencyStop,
