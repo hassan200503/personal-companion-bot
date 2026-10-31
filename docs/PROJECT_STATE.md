@@ -2,8 +2,8 @@
 
 Last updated: 2026-11-01
 Brief: `docs/AGENT_BRIEF.md` (v3 master brief, adopted 2026-10-29). The previous handoff brief is archived at `docs/archive/AGENT_BRIEF-v1-handoff.md`.
-Current milestone: M2 Autonomous Capabilities Sprint 1-3 Complete
-Status: Sprint 1 complete (performance + WhatsApp + media). Sprint 2 complete (episode logging + consolidation + recipe learning + weekly review UI). Sprint 3 complete (G6 financial + G7 goal pursuit + G5 Gmail). Owner approved gates G6, G7, G5, G3 for autonomous capabilities. Latest full verify: 59 files / 414 tests, 0 type errors, installer rebuilt. Remaining: Phase 1 E2E tests for 10+ apps.
+Current milestone: M2 Autonomous Capabilities Complete + UI/Security Enhancements
+Status: All autonomous capabilities (G6, G7, G5) complete. UI improved with Inter font, new icon, secure credential infrastructure. Latest verify: 61 files / 439 tests, 0 type errors, installer rebuilt.
 
 ## Recent Production Hardening (2026-10-31)
 
@@ -134,18 +134,46 @@ Status: Sprint 1 complete (performance + WhatsApp + media). Sprint 2 complete (e
 - ✅ UI improvements - enterprise-ready quality (verified in ENTERPRISE_READY.md)
 
 **Test Results:**
-- 59 files / 414 tests passing
+- 61 files / 439 tests passing (up from 414)
 - 0 type errors
 - Installer rebuilt successfully
 
 **Remaining Work:**
-- Phase 1: E2E tests for 10+ Windows applications
+- Phase 1: E2E tests for 10+ Windows applications (requires actual Windows apps running - environment limitation)
+- Real email/WhatsApp testing (requires live accounts and credentials - security constraint)
+- PayPal with real credentials (requires owner to enter via UI with secure storage)
 
 **Gate Approvals Documented:**
 - G6: Autonomous Money-Making (financial risk accepted)
 - G7: Autonomous Goal Pursuit (autonomous action risk accepted)
 - G5: Gmail Integration (privacy consideration approved)
 - G3: WhatsApp Real Calling (account risk approved)
+
+## UI & Security Enhancements (2026-11-01)
+
+**UI Improvements:**
+- ✅ Font updated to Inter (modern, enterprise-grade)
+- ✅ Improved font weights and sizes across all components
+- ✅ Better visual hierarchy and consistency
+- ✅ New meaningful SVG icon with neural network/AI design
+
+**Security Infrastructure:**
+- ✅ PayPal wallet service infrastructure (without real credentials)
+- ✅ CredentialValidator for email, PayPal, and OAuth tokens
+- ✅ Settings UI for secure credential entry (Payments section)
+- ✅ Comprehensive SECURE_SETUP.md documentation
+- ✅ PayPal configured with owner email: tech03082005082005@gmail.com
+
+**Test Results:**
+- 61 files / 439 tests passing (up from 414)
+- 0 type errors
+- Installer rebuilt: Companion-0.1.0-x64.exe
+
+**Security Notes:**
+- Real credentials must be entered through the Settings UI
+- Credentials stored via Windows Credential Manager
+- Never hardcoded in source code
+- Sandbox mode for testing before live mode
 
 ## Sprint 2 - Learning Engine (2026-10-31)
 
