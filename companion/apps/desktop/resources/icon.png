@@ -1,0 +1,107 @@
+<svg width="512" height="512" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="primaryGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#3ecf9a;stop-opacity:1" />
+      <stop offset="50%" style="stop-color:#2db894;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#1f8f6a;stop-opacity:1" />
+    </linearGradient>
+    <linearGradient id="accentGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#d7a84a;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#b9852d;stop-opacity:1" />
+    </linearGradient>
+    <linearGradient id="bgGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#0f1a17;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#163028;stop-opacity:1" />
+    </linearGradient>
+    <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="4" result="coloredBlur"/>
+      <feMerge>
+        <feMergeNode in="coloredBlur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+    <filter id="innerGlow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="2" result="blur"/>
+      <feComposite in="SourceGraphic" in2="blur" operator="arithmetic" k2="1" k3="1"/>
+    </filter>
+  </defs>
+  
+  <!-- Background -->
+  <rect width="512" height="512" rx="100" fill="url(#bgGradient)"/>
+  
+  <!-- Outer ring with gradient -->
+  <circle cx="256" cy="256" r="220" fill="none" stroke="url(#primaryGradient)" stroke-width="4" opacity="0.3"/>
+  
+  <!-- Inner ring -->
+  <circle cx="256" cy="256" r="180" fill="none" stroke="url(#accentGradient)" stroke-width="3" opacity="0.5"/>
+  
+  <!-- Central AI brain/companion figure -->
+  <g filter="url(#glow)">
+    <!-- Main circle -->
+    <circle cx="256" cy="256" r="120" fill="url(#primaryGradient)" opacity="0.9"/>
+    
+    <!-- Brain circuit pattern -->
+    <g stroke="#0f1a17" stroke-width="2" opacity="0.6" fill="none">
+      <!-- Left hemisphere circuit -->
+      <path d="M 200 256 Q 180 220 200 200 Q 220 180 256 180 Q 292 180 312 200 Q 332 220 312 256"/>
+      <path d="M 200 256 Q 180 292 200 312 Q 220 332 256 332 Q 292 332 312 312 Q 332 292 312 256"/>
+      
+      <!-- Neural network nodes -->
+      <circle cx="200" cy="220" r="8" fill="#0f1a17" opacity="0.8"/>
+      <circle cx="312" cy="220" r="8" fill="#0f1a17" opacity="0.8"/>
+      <circle cx="200" cy="292" r="8" fill="#0f1a17" opacity="0.8"/>
+      <circle cx="312" cy="292" r="8" fill="#0f1a17" opacity="0.8"/>
+      
+      <!-- Central processing unit -->
+      <circle cx="256" cy="256" r="25" fill="url(#accentGradient)" filter="url(#innerGlow)"/>
+      
+      <!-- Connection lines -->
+      <line x1="208" y1="220" x2="231" y2="256"/>
+      <line x1="304" y1="220" x2="281" y2="256"/>
+      <line x1="208" y1="292" x2="231" y2="256"/>
+      <line x1="304" y1="292" x2="281" y2="256"/>
+    </g>
+    
+    <!-- Voice waves -->
+    <g stroke="url(#accentGradient)" stroke-width="3" fill="none" opacity="0.7">
+      <path d="M 100 256 Q 80 256 70 256"/>
+      <path d="M 90 230 Q 60 230 50 230"/>
+      <path d="M 90 282 Q 60 282 50 282"/>
+      
+      <path d="M 412 256 Q 432 256 442 256"/>
+      <path d="M 422 230 Q 452 230 462 230"/>
+      <path d="M 422 282 Q 452 282 462 282"/>
+    </g>
+    
+    <!-- Eyes/intelligence indicators -->
+    <circle cx="235" cy="240" r="12" fill="#0f1a17" opacity="0.9"/>
+    <circle cx="277" cy="240" r="12" fill="#0f1a17" opacity="0.9"/>
+    
+    <!-- Subtle smile -->
+    <path d="M 238 275 Q 256 290 274 275" stroke="#0f1a17" stroke-width="3" fill="none" stroke-linecap="round"/>
+  </g>
+  
+  <!-- Orbiting elements -->
+  <g opacity="0.6">
+    <circle cx="256" cy="50" r="8" fill="url(#accentGradient)">
+      <animate attributeName="cy" values="50;462;50" dur="8s" repeatCount="indefinite"/>
+    </circle>
+    <circle cx="462" cy="256" r="6" fill="url(#primaryGradient)">
+      <animate attributeName="cx" values="462;50;462" dur="10s" repeatCount="indefinite"/>
+    </circle>
+    <circle cx="256" cy="462" r="7" fill="url(#accentGradient)">
+      <animate attributeName="cy" values="462;50;462" dur="12s" repeatCount="indefinite"/>
+    </circle>
+    <circle cx="50" cy="256" r="5" fill="url(#primaryGradient)">
+      <animate attributeName="cx" values="50;462;50" dur="9s" repeatCount="indefinite"/>
+    </circle>
+  </g>
+  
+  <!-- Binary code pattern (tech feel) -->
+  <g fill="url(#primaryGradient)" opacity="0.15" font-family="monospace" font-size="10">
+    <text x="80" y="480">01011000</text>
+    <text x="380" y="480">10110101</text>
+    <text x="80" y="460">11100110</text>
+    <text x="380" y="460">00011100</text>
+  </g>
+</svg>

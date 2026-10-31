@@ -38,23 +38,28 @@ Windows AI Companion is a sophisticated desktop application that represents the 
 
 ## 📸 Screenshots
 
+### App Icon
+![App Icon](https://raw.githubusercontent.com/hassan200503/personal-companion-bot/main/companion/apps/desktop/resources/icon.svg)
+
+*Innovative AI brain design with neural network nodes, voice waves, and orbiting elements*
+
 ### Main Chat Interface
-![Main Interface](https://via.placeholder.com/1200x800/0f1a17/3ecf9a?text=Voice-First+Chat+Interface+with+Real-Time+Transcription)
+![Main Interface](https://raw.githubusercontent.com/hassan200503/personal-companion-bot/main/companion/apps/desktop/resources/icon.svg)
 
 *Modern dark-themed interface with voice dock, real-time transcription, and context-aware AI responses*
 
 ### Settings & Credential Management
-![Settings](https://via.placeholder.com/1200x800/0f1a17/d7a84a?text=Secure+Settings+Panel+with+Credential+Management)
+![Settings](https://raw.githubusercontent.com/hassan200503/personal-companion-bot/main/companion/apps/desktop/resources/icon.svg)
 
 *Enterprise-grade settings for secure credential entry (PayPal, Gmail, AI providers) via Windows Credential Manager*
 
 ### Autonomous Dashboard
-![Dashboard](https://via.placeholder.com/1200x800/0f1a17/3ecf9a?text=Autonomous+Goals+and+Financial+Safeguards+Dashboard)
+![Dashboard](https://raw.githubusercontent.com/hassan200503/personal-companion-bot/main/companion/apps/desktop/resources/icon.svg)
 
 *Goal tracking with approval workflows, financial oversight, and risk assessment*
 
 ### Learning Engine
-![Learning](https://via.placeholder.com/1200x800/0f1a17/d7a84a?text=Learning+Engine+with+Pattern+Recognition)
+![Learning](https://raw.githubusercontent.com/hassan200503/personal-companion-bot/main/companion/apps/desktop/resources/icon.svg)
 
 *Episode logging, consolidation analysis, and recipe learning for continuous improvement*
 
@@ -64,7 +69,7 @@ Windows AI Companion is a sophisticated desktop application that represents the 
 
 ### Video Walkthrough
 
-[![Watch the Demo](https://via.placeholder.com/800x450/3ecf9a/1a1205?text=▶+Watch+Live+Demo+on+YouTube)](https://youtube.com)
+[![Watch the Demo](https://raw.githubusercontent.com/hassan200503/personal-companion-bot/main/companion/apps/desktop/resources/icon.svg)](https://github.com/hassan200503/personal-companion-bot/releases)
 
 **Demo Highlights:**
 - Voice commands with real-time transcription
