@@ -1,4 +1,5 @@
 import { execFile, spawn, type ChildProcess } from 'node:child_process';
+import kill from 'tree-kill';
 import { resolveLocalMedia, type MediaEntry, MediaFallbackChain, type FallbackProvider } from '../media/resolver.js';
 import { probeUiAutomation } from './uia.js';
 import { ensureStartAppsCache, resolveFromStartAppsCache } from './start-apps-cache.js';
@@ -220,7 +221,9 @@ export async function playMedia(
 
 let ttsProcess: ChildProcess | null = null;
 
-export async function speakText(text: string, voice?: string, rate?: number): Promise<{ spoken: boolean; error?: string }> {
+export async function speakText(text: string, voice?: string, rate?: number, signal?: AbortSignal): Promise<{ spoken: boolean; error?: string }> {
+  if (signal?.aborted) return { spoken: false, error: 'aborted' };
+  
   const safe = text.replace(/'/g, "''").replace(/\r?\n/g, ' ');
   const voiceCmd = voice ? `$s.SelectVoice('${voice.replace(/'/g, "''")}');` : '';
   const rateCmd = typeof rate === 'number' ? `$s.Rate = ${Math.max(-10, Math.min(10, Math.round(rate)))};` : '';
@@ -229,13 +232,34 @@ export async function speakText(text: string, voice?: string, rate?: number): Pr
     const child = spawn('powershell', ['-NoProfile', '-Command', script], { windowsHide: true });
     ttsProcess = child;
     let err = '';
+    let settled = false;
+    
+    const finish = (result: { spoken: boolean; error?: string }) => {
+      if (settled) return;
+      settled = true;
+      signal?.removeEventListener('abort', onAbort);
+      if (ttsProcess === child) ttsProcess = null;
+      resolve(result);
+    };
+    
+    const onAbort = () => {
+      if (child.pid) {
+        kill(child.pid, 'SIGKILL', (err) => {
+          if (err) {
+            try { child.kill('SIGKILL'); } catch { /* ignore */ }
+          }
+        });
+      }
+      finish({ spoken: false, error: 'aborted' });
+    };
+    
+    signal?.addEventListener('abort', onAbort, { once: true });
+    
     child.stderr.on('data', (d) => { err += d.toString(); });
     child.on('close', (code) => {
-      ttsProcess = null;
-      if (code === 0) resolve({ spoken: true });
-      else resolve({ spoken: false, error: err.trim() || `exit ${code}` });
+      finish(code === 0 ? { spoken: true } : { spoken: false, error: err.trim() || `exit ${code}` });
     });
-    child.on('error', (e) => resolve({ spoken: false, error: e.message }));
+    child.on('error', (e) => finish({ spoken: false, error: e.message }));
   });
 }
 
@@ -290,25 +314,53 @@ export interface RunCommandResult {
   code: number;
 }
 
-export async function runCommand(command: string, args: string[] = [], timeoutMs = 30_000): Promise<RunCommandResult> {
+export async function runCommand(command: string, args: string[] = [], timeoutMs = 30_000, signal?: AbortSignal): Promise<RunCommandResult> {
   if (!command || typeof command !== 'string') throw new Error('command required');
+  if (signal?.aborted) return { stdout: '', stderr: 'aborted', code: -1 };
+  
   return new Promise<RunCommandResult>((resolve) => {
     const child = spawn(command, args, { shell: true, windowsHide: true });
     let stdout = '';
     let stderr = '';
+    let settled = false;
+    
+    const finish = (result: RunCommandResult) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      signal?.removeEventListener('abort', onAbort);
+      resolve(result);
+    };
+    
+    const killTree = () => {
+      if (!child.pid) return;
+      kill(child.pid, 'SIGKILL', (err) => {
+        if (err) {
+          // Fallback to direct kill if tree-kill fails
+          try { child.kill('SIGKILL'); } catch { /* ignore */ }
+        }
+      });
+    };
+    
+    const onAbort = () => {
+      killTree();
+      finish({ stdout, stderr: stderr + '\n[aborted]', code: -1 });
+    };
+    
     const timer = setTimeout(() => {
-      try { child.kill(); } catch { /* ignore */ }
-      resolve({ stdout, stderr: stderr + '\n[timed out]', code: -1 });
+      killTree();
+      finish({ stdout, stderr: stderr + '\n[timed out]', code: -1 });
     }, timeoutMs);
+    
+    signal?.addEventListener('abort', onAbort, { once: true });
+    
     child.stdout?.on('data', (d) => { stdout += String(d); });
     child.stderr?.on('data', (d) => { stderr += String(d); });
     child.on('error', (e) => {
-      clearTimeout(timer);
-      resolve({ stdout, stderr: stderr + '\n' + String(e), code: -1 });
+      finish({ stdout, stderr: stderr + '\n' + String(e), code: -1 });
     });
     child.on('close', (code) => {
-      clearTimeout(timer);
-      resolve({ stdout, stderr, code: code ?? 0 });
+      finish({ stdout, stderr, code: code ?? 0 });
     });
   });
 }
@@ -517,7 +569,9 @@ async function observeWhatsAppOutgoing(message: string): Promise<boolean> {
   }
 }
 
-export async function sendWhatsAppMessage(contact: string, message: string): Promise<WhatsAppSendResult> {
+export async function sendWhatsAppMessage(contact: string, message: string, signal?: AbortSignal): Promise<WhatsAppSendResult> {
+  if (signal?.aborted) return { typed: false, sent: false, verified: false, error: 'aborted' };
+  
   const phone = contact.replace(/[^\d+]/g, '');
   const isPhone = phone.length >= 7;
   const encoded = encodeURIComponent(message);
@@ -525,12 +579,27 @@ export async function sendWhatsAppMessage(contact: string, message: string): Pro
   const open = await new Promise<{ ok: boolean; error?: string }>((resolve) => {
     const child = spawn('cmd', ['/c', 'start', '', url], { windowsHide: true });
     let err = '';
+    const onAbort = () => {
+      try { child.kill(); } catch { /* ignore */ }
+      resolve({ ok: false, error: 'aborted' });
+    };
+    signal?.addEventListener('abort', onAbort, { once: true });
     child.stderr.on('data', (d) => { err += d.toString(); });
-    child.on('close', (code) => resolve(code === 0 ? { ok: true } : { ok: false, error: err.trim() || `exit ${code}` }));
-    child.on('error', (e) => resolve({ ok: false, error: e.message }));
+    child.on('close', (code) => {
+      signal?.removeEventListener('abort', onAbort);
+      resolve(code === 0 ? { ok: true } : { ok: false, error: err.trim() || `exit ${code}` });
+    });
+    child.on('error', (e) => {
+      signal?.removeEventListener('abort', onAbort);
+      resolve({ ok: false, error: e.message });
+    });
   });
   if (!open.ok) return { typed: false, sent: false, verified: false, error: open.error };
+  if (signal?.aborted) return { typed: false, sent: false, verified: false, error: 'aborted' };
+  
   await new Promise((r) => setTimeout(r, isPhone ? 4000 : 5000));
+  if (signal?.aborted) return { typed: false, sent: false, verified: false, error: 'aborted' };
+  
   const contactEsc = escapeSendKeys(contact);
   const messageEsc = escapeSendKeys(message);
   const steps: string[] = [];
@@ -551,15 +620,29 @@ export async function sendWhatsAppMessage(contact: string, message: string): Pro
   const ps = steps.join('; ');
   const typed = await new Promise<boolean>((resolve) => {
     const child = spawn('powershell', ['-NoProfile', '-Command', ps], { windowsHide: true });
-    child.on('close', (c) => { resolve(c === 0); });
-    child.on('error', () => resolve(false));
+    const onAbort = () => {
+      try { child.kill(); } catch { /* ignore */ }
+      resolve(false);
+    };
+    signal?.addEventListener('abort', onAbort, { once: true });
+    child.on('close', (c) => {
+      signal?.removeEventListener('abort', onAbort);
+      resolve(c === 0);
+    });
+    child.on('error', () => {
+      signal?.removeEventListener('abort', onAbort);
+      resolve(false);
+    });
   });
 
-  if (!typed) return { typed: false, sent: false, verified: false, error: 'ui_automation_failed' };
+  if (!typed) return { typed: false, sent: false, verified: false, error: signal?.aborted ? 'aborted' : 'ui_automation_failed' };
+  if (signal?.aborted) return { typed: true, sent: false, verified: false, error: 'aborted' };
 
   // Keystrokes are not observation. Only an accessibility-tree read of the
   // outgoing bubble may set sent/verified.
   await new Promise((r) => setTimeout(r, 1200));
+  if (signal?.aborted) return { typed: true, sent: false, verified: false, error: 'aborted' };
+  
   const observed = await observeWhatsAppOutgoing(message);
   return observed
     ? { typed: true, sent: true, verified: true }

@@ -72,9 +72,9 @@ export function createOsSpeakTool(): ToolDefinition<{ text: string; voice?: stri
     cancellable: true,
     audit: 'none',
     platforms: ['all'],
-    execute: async (_ctx, input) => {
+    execute: async (ctx, input) => {
       const safeText = normalizeSpeech(input.text, { speakSafe: true, maxSentences: 3 });
-      const r = await speakText(safeText, input.voice, input.rate);
+      const r = await speakText(safeText, input.voice, input.rate, ctx.signal);
       return { spoken: r.spoken };
     },
   };
@@ -124,8 +124,8 @@ export function createOsRunTool(): ToolDefinition<{ command: string; args?: stri
     cancellable: true,
     audit: 'full',
     platforms: ['all'],
-    execute: async (_ctx, input) => {
-      return runCommand(input.command, input.args ?? []);
+    execute: async (ctx, input) => {
+      return runCommand(input.command, input.args ?? [], 60_000, ctx.signal);
     },
   };
 }
@@ -244,8 +244,8 @@ export function createOsWhatsAppTool(): ToolDefinition<{ contact: string; messag
     cancellable: true,
     audit: 'full',
     platforms: ['all'],
-    execute: async (_ctx, input) => {
-      return sendWhatsAppMessage(input.contact, input.message);
+    execute: async (ctx, input) => {
+      return sendWhatsAppMessage(input.contact, input.message, ctx.signal);
     },
   };
 }

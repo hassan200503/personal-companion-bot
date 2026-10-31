@@ -6,6 +6,7 @@ import type {
   ToolExecutionContext,
   ToolPolicyDecision,
 } from './contracts.js';
+import { DEFAULT_RATE_LIMITS } from './rate-limiter.js';
 import { TrustedIntentGuard, type EnvironmentSnapshot, type SensitiveTarget } from '../security/index.js';
 import { verifyPolicyBundle } from '../security/policy-bundle.js';
 
@@ -74,10 +75,11 @@ export class DefaultPolicyEngine implements PolicyEngine {
     }
 
     // rate limit
-    if (ctx.rateLimiter && tool.requiredPermissions.length >= 0) {
+    if (ctx.rateLimiter) {
       const key = `${request.requestedBy ?? 'anon'}:${tool.name}`;
-      // default 60/min
-      if (!ctx.rateLimiter.allow(key, 60, 60_000)) {
+      // Use risk class to determine rate limit
+      const config = DEFAULT_RATE_LIMITS[tool.riskClass] ?? DEFAULT_RATE_LIMITS[3];
+      if (config && !ctx.rateLimiter.allow(key, config.maxCalls, config.windowMs)) {
         return { allowed: false, requiresConfirmation: false, reason: 'rate_limited' };
       }
     }

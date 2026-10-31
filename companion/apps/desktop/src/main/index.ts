@@ -37,6 +37,7 @@ import {
   DefaultToolRegistry,
   DefaultToolExecutor,
   DefaultPolicyEngine,
+  SlidingWindowRateLimiter,
   InMemoryConfirmationManager,
   SqliteAuditLogger,
   EmergencyStop,
@@ -120,6 +121,7 @@ let providerRouter: ProviderRouter | null = null;
 let credentialStore: CredentialStore | null = null;
 let toolRegistry: DefaultToolRegistry | null = null;
 let toolExecutor: DefaultToolExecutor | null = null;
+let rateLimiter: SlidingWindowRateLimiter | null = null;
 let confirmationManager: InMemoryConfirmationManager | null = null;
 let auditLogger: SqliteAuditLogger | null = null;
 let memoryRepository: MemoryRepository | null = null;
@@ -365,6 +367,7 @@ async function openStorage(): Promise<void> {
            try {
              const reg = new DefaultToolRegistry();
              const cm = new InMemoryConfirmationManager();
+             const rl = new SlidingWindowRateLimiter();
              for (const t of createOsControlTools()) reg.register(t);
              for (const t of createResearchTools()) reg.register(t);
              for (const t of createEmailTools(() => resolveEmailConfigForTools())) reg.register(t);
@@ -372,6 +375,7 @@ async function openStorage(): Promise<void> {
              reg.register(createMemoryProposeTool() as never);
              toolRegistry = reg;
              confirmationManager = cm;
+             rateLimiter = rl;
              toolExecutor = new DefaultToolExecutor(reg, new DefaultPolicyEngine(), cm);
            } catch (e) {
              logger.warn('os control init failed', { error: String(e) });
@@ -649,6 +653,7 @@ async function buildToolContext(signal: AbortSignal): Promise<ToolExecutionConte
     signal,
     platform: process.platform,
     permissions: grantedPermissions(),
+    rateLimiter: rateLimiter ?? undefined,
     audit: auditLogger ?? { record: () => {}, list: () => [] } as never,
     confirmation: confirmationManager!,
     memoryRepository: memoryRepository ?? undefined,
