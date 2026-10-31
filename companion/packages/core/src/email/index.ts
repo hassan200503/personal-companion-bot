@@ -48,3 +48,13 @@ export type { EmailConfigResolver } from './tools.js';
 
 export { SmtpClient, deriveSmtpHost } from './smtp-client.js';
 export type { SmtpSendInput, SmtpSendResult } from './smtp-client.js';
+
+export {
+  MockEmailReader,
+  EmailAnalyzer,
+} from './gmail.js';
+export type {
+  GmailMessage,
+  GmailConfig,
+  GmailReader,
+} from './gmail.js';
