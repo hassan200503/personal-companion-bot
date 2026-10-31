@@ -69,9 +69,7 @@ Companion AI is a sophisticated Windows desktop application that represents the 
 
 ### Video Walkthrough
 
-[![Watch the Demo](https://raw.githubusercontent.com/hassan200503/personal-companion-bot/main/companion/apps/desktop/resources/icon.svg)](https://github.com/hassan200503/personal-companion-bot/releases)
-
-*Demo video coming soon - showing voice commands, autonomous task execution, financial operations, and learning engine*
+[![Watch the Demo](https://raw.githubusercontent.com/hassan200503/personal-companion-bot/main/docs/screenshots/main-interface.png)](https://github.com/hassan200503/personal-companion-bot/releases)
 
 **Demo Highlights:**
 - Voice commands with real-time transcription
@@ -79,6 +77,8 @@ Companion AI is a sophisticated Windows desktop application that represents the 
 - Financial operations with approval workflows
 - Email analysis and categorization
 - Learning engine in action
+
+> **Note:** The demo video is available in the repository at `docs/videos/demo.mp4` (117MB). For optimal viewing experience and faster streaming, consider uploading the video to YouTube or Vimeo and updating the link above.
 
 ---
 
