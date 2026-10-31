@@ -1,8 +1,20 @@
 import { execFile, spawn, type ChildProcess } from 'node:child_process';
 import kill from 'tree-kill';
-import { resolveLocalMedia, type MediaEntry, MediaFallbackChain, type FallbackProvider } from '../media/resolver.js';
+import { resolveLocalMedia, MediaFallbackChain, type FallbackProvider } from '../media/resolver.js';
 import { probeUiAutomation } from './uia.js';
 import { ensureStartAppsCache, resolveFromStartAppsCache } from './start-apps-cache.js';
+import { MediaIndexer, getDefaultMediaDirectories } from '../media/indexer.js';
+
+// Singleton media indexer for incremental indexing
+let mediaIndexer: MediaIndexer | null = null;
+
+function getMediaIndexer(): MediaIndexer {
+  if (!mediaIndexer) {
+    const directories = getDefaultMediaDirectories();
+    mediaIndexer = new MediaIndexer(directories, 3, 500);
+  }
+  return mediaIndexer;
+}
 
 export async function openTarget(target: string, signal?: AbortSignal): Promise<{ opened: boolean; resolved?: string; error?: string; method?: string }> {
   const t = target.trim();
@@ -118,8 +130,6 @@ export async function playMedia(
   if (signal?.aborted) return { played: false, error: 'aborted' };
 
   const { existsSync } = await import('node:fs');
-  const { readdirSync } = await import('node:fs');
-  const pathMod = await import('node:path');
 
   const runStart = (x: string) => new Promise<{ ok: boolean; error?: string }>((resolve) => {
     if (signal?.aborted) {
@@ -145,33 +155,10 @@ export async function playMedia(
   });
 
   if (!existsSync(t)) {
-    const roots = [
-      process.env.USERPROFILE ? pathMod.join(process.env.USERPROFILE, 'Music') : '',
-      process.env.USERPROFILE ? pathMod.join(process.env.USERPROFILE, 'Videos') : '',
-      process.env.USERPROFILE ? pathMod.join(process.env.USERPROFILE, 'Downloads') : '',
-      process.env.USERPROFILE ? pathMod.join(process.env.USERPROFILE, 'Desktop') : '',
-      process.env.USERPROFILE ? pathMod.join(process.env.USERPROFILE, 'Documents') : '',
-    ].filter(Boolean);
-    const entries: MediaEntry[] = [];
-    const walk = (dir: string, depth: number): void => {
-      if (depth < 0 || entries.length >= 500) return;
-      try {
-        for (const entry of readdirSync(dir, { withFileTypes: true })) {
-          const full = pathMod.join(dir, entry.name);
-          if (entry.isFile() && /\.(mp3|wav|m4a|flac|mp4|mkv|avi|mov)$/i.test(entry.name)) {
-            entries.push({ path: full, title: entry.name.replace(/\.[^.]+$/, '') });
-          }
-          if (entry.isDirectory()) {
-            walk(full, depth - 1);
-          }
-        }
-      } catch { /* ignore */ }
-    };
-    for (const root of roots) {
-      if (!existsSync(root)) continue;
-      walk(root, 3);
-      if (entries.length >= 500) break;
-    }
+    // Use incremental media indexer
+    const indexer = getMediaIndexer();
+    await indexer.updateIndex(); // Incremental update
+    const entries = indexer.getEntries();
     const local = resolveLocalMedia(t, entries);
     if (local.status === 'matched') t = local.candidates[0]!.path;
     else if (local.status === 'ambiguous') {
