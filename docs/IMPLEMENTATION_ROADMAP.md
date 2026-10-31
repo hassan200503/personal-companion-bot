@@ -11,12 +11,13 @@
 - ✅ Gate approvals documented (G6, G7, G5, G3)
 - ✅ Performance optimization (ResponseCache)
 - ✅ WhatsApp calling by name (whatsappCallTool)
-- ✅ Tests: 52 files / 341 passing
+- ✅ Media indexing (MediaIndexer with incremental updates)
+- ✅ Tests: 53 files / 347 passing
 - ✅ Typecheck: 0 errors
 - ✅ Installer rebuilt and pushed to GitHub
 
 **Remaining Work (4-5 weeks):**
-- Phase 1: Media indexing, E2E tests for 10+ apps
+- Phase 1: E2E tests for 10+ apps
 - Phase 2: Learning engine (episode logging, consolidation, weekly review, recipes)
 - Phase 3: Autonomous capabilities (goal tracker, decision maker, financial safeguards)
 - Phase 4: Gmail integration (OAuth2, classification, read-aloud)

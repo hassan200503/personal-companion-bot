@@ -3,7 +3,7 @@
 Last updated: 2026-10-31
 Brief: `docs/AGENT_BRIEF.md` (v3 master brief, adopted 2026-10-29). The previous handoff brief is archived at `docs/archive/AGENT_BRIEF-v1-handoff.md`.
 Current milestone: M2 Autonomous Capabilities Sprint 1
-Status: Sprint 1 partial delivery: Performance optimization (ResponseCache) and WhatsApp calling by name (whatsappCallTool) implemented. Owner approved gates G6, G7, G5, G3 for autonomous capabilities. Latest full verify: 52 files / 341 tests. Phase 2 (Learning Engine) and Phase 3 (Autonomous Capabilities) remain in progress.
+Status: Sprint 1 complete: Performance optimization (ResponseCache), WhatsApp calling by name (whatsappCallTool), and incremental media indexing (MediaIndexer) implemented. Owner approved gates G6, G7, G5, G3 for autonomous capabilities. Latest full verify: 53 files / 347 tests. Phase 2 (Learning Engine) and Phase 3 (Autonomous Capabilities) remain in progress.
 
 ## Recent Production Hardening (2026-10-31)
 
@@ -23,22 +23,25 @@ Status: Sprint 1 partial delivery: Performance optimization (ResponseCache) and 
 - ✅ G5: Gmail Integration - Owner approved for email read-aloud and analysis
 - ✅ G3: WhatsApp Real Calling - Owner approved with account risk acceptance
 
-**Sprint 1 Deliverables (Partial):**
+**Sprint 1 Deliverables (Complete):**
 - ✅ ResponseCache: LRU cache with 5-minute TTL for common queries
 - ✅ Cache integrated into DefaultConversationEngine
 - ✅ whatsappCallTool: Voice/video calling by contact name
 - ✅ WhatsAppAdapter integration with contact search
 - ✅ Class 3 risk with confirmation requirement
+- ✅ MediaIndexer: Incremental media file indexing with persistence
+- ✅ Media playback with faster indexing (no full directory walks)
 - ✅ 8 new tests for response cache
+- ✅ 6 new tests for media indexer
 - ✅ Documentation: GATE_APPROVALS.md, IMPLEMENTATION_ROADMAP.md
 
 **Test Results:**
-- 52 files / 341 tests passing (up from 333)
+- 53 files / 347 tests passing (up from 333)
 - 0 type errors
 - npm run package: installer rebuilt successfully
 
-**Status:** Sprint 1 partial - performance + WhatsApp calling complete.
-**Next:** Media indexing, learning engine, autonomous capabilities (Phases 2-4).
+**Status:** Sprint 1 complete - performance + WhatsApp calling + media indexing done.
+**Next:** E2E tests for 10+ apps, then Phase 2 (Learning Engine).
 
 **G014 Implementation:**
 - executor.ts: Added read-back branch in tool execution flow
