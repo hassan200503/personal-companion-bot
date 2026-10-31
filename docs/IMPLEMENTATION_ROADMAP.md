@@ -12,13 +12,14 @@
 - ✅ Performance optimization (ResponseCache)
 - ✅ WhatsApp calling by name (whatsappCallTool)
 - ✅ Media indexing (MediaIndexer with incremental updates)
-- ✅ Tests: 53 files / 347 passing
+- ✅ Episode logging (DefaultEpisodeLogger for learning engine)
+- ✅ Tests: 54 files / 356 passing
 - ✅ Typecheck: 0 errors
 - ✅ Installer rebuilt and pushed to GitHub
 
 **Remaining Work (4-5 weeks):**
 - Phase 1: E2E tests for 10+ apps
-- Phase 2: Learning engine (episode logging, consolidation, weekly review, recipes)
+- Phase 2: Consolidation job, weekly review UI, recipe learning
 - Phase 3: Autonomous capabilities (goal tracker, decision maker, financial safeguards)
 - Phase 4: Gmail integration (OAuth2, classification, read-aloud)
 - UI improvements: Enterprise-ready dashboard

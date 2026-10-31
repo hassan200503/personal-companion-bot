@@ -2,8 +2,8 @@
 
 Last updated: 2026-10-31
 Brief: `docs/AGENT_BRIEF.md` (v3 master brief, adopted 2026-10-29). The previous handoff brief is archived at `docs/archive/AGENT_BRIEF-v1-handoff.md`.
-Current milestone: M2 Autonomous Capabilities Sprint 1
-Status: Sprint 1 complete: Performance optimization (ResponseCache), WhatsApp calling by name (whatsappCallTool), and incremental media indexing (MediaIndexer) implemented. Owner approved gates G6, G7, G5, G3 for autonomous capabilities. Latest full verify: 53 files / 347 tests. Phase 2 (Learning Engine) and Phase 3 (Autonomous Capabilities) remain in progress.
+Current milestone: M2 Autonomous Capabilities Sprint 1-2
+Status: Sprint 1 complete (performance + WhatsApp + media). Sprint 2 started (episode logging). Owner approved gates G6, G7, G5, G3 for autonomous capabilities. Latest full verify: 54 files / 356 tests. Remaining: consolidation job, weekly review UI, recipe learning, autonomous capabilities, Gmail integration, UI improvements.
 
 ## Recent Production Hardening (2026-10-31)
 
@@ -42,6 +42,24 @@ Status: Sprint 1 complete: Performance optimization (ResponseCache), WhatsApp ca
 
 **Status:** Sprint 1 complete - performance + WhatsApp calling + media indexing done.
 **Next:** E2E tests for 10+ apps, then Phase 2 (Learning Engine).
+
+## Sprint 2 - Learning Engine (2026-10-31)
+
+**Episode Logging (Complete):**
+- ✅ DefaultEpisodeLogger: Records conversation episodes for learning
+- ✅ Topic extraction from message content (email, calendar, etc.)
+- ✅ Tool use tracking with success/failure and risk class
+- ✅ Auto-determination of episode outcome (success/partial/failed)
+- ✅ Episode summary generation for analysis
+- ✅ Integration into ConversationEngine (sendMessage/streamMessage)
+- ✅ 9 new tests for episode logger
+
+**Test Results:**
+- 54 files / 356 tests passing (up from 347)
+- 0 type errors
+
+**Status:** Sprint 2 started - episode logging complete.
+**Next:** Consolidation job, weekly review UI, recipe learning.
 
 **G014 Implementation:**
 - executor.ts: Added read-back branch in tool execution flow
