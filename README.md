@@ -12,8 +12,8 @@
 
 **A voice-first, intelligent Windows AI companion with autonomous capabilities**
 
-[![Watch the Demo](https://img.shields.io/badge/demo-live%20demo-red.svg)](https://github.com/hassan200503/personal-companion-bot/releases)
-[![Installation](https://img.shields.io/badge/installer-ready-orange.svg)](https://github.com/hassan200503/personal-companion-bot/releases)
+[![Download](https://img.shields.io/badge/download-v0.1.0-brightgreen.svg)](https://github.com/hassan200503/personal-companion-bot/releases/tag/v0.1.0)
+[![Watch Demo](https://img.shields.io/badge/demo-video-red.svg)](https://github.com/hassan200503/personal-companion-bot/releases/tag/v0.1.0)
 
 </div>
 
@@ -69,7 +69,7 @@ Companion AI is a sophisticated Windows desktop application that represents the 
 
 ### Video Walkthrough
 
-[![Watch the Demo](https://raw.githubusercontent.com/hassan200503/personal-companion-bot/main/docs/screenshots/main-interface.png)](https://github.com/hassan200503/personal-companion-bot/releases)
+[![Watch the Demo](https://raw.githubusercontent.com/hassan200503/personal-companion-bot/main/docs/screenshots/main-interface.png)](https://github.com/hassan200503/personal-companion-bot/releases/tag/v0.1.0)
 
 **Demo Highlights:**
 - Voice commands with real-time transcription
@@ -78,7 +78,7 @@ Companion AI is a sophisticated Windows desktop application that represents the 
 - Email analysis and categorization
 - Learning engine in action
 
-> **Note:** The demo video is available in the repository at `docs/videos/demo.mp4` (117MB). For optimal viewing experience and faster streaming, consider uploading the video to YouTube or Vimeo and updating the link above.
+> **Note:** Click the image above to download and watch the demo video (117MB) from the v0.1.0 release. For faster streaming, consider uploading to YouTube and updating the link.
 
 ---
 
@@ -228,7 +228,7 @@ Companion AI is a sophisticated Windows desktop application that represents the 
 
 ### Option 1: Installer (Recommended for Users)
 
-1. Download the latest installer from [Releases](https://github.com/hassan200503/personal-companion-bot/releases)
+1. Download the installer from [Releases v0.1.0](https://github.com/hassan200503/personal-companion-bot/releases/tag/v0.1.0)
 2. Run `Companion-0.1.0-x64.exe`
 3. Follow the installation wizard
 4. Launch Companion from the Start menu
