@@ -1,0 +1,59 @@
+<svg width="256" height="256" viewBox="0 0 256 256" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="grad1" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#3ecf9a;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#d7a84a;stop-opacity:1" />
+    </linearGradient>
+    <linearGradient id="grad2" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#5fe0b0;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#efc46a;stop-opacity:1" />
+    </linearGradient>
+    <filter id="glow">
+      <feGaussianBlur stdDeviation="3" result="coloredBlur"/>
+      <feMerge>
+        <feMergeNode in="coloredBlur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+  
+  <!-- Background circle -->
+  <circle cx="128" cy="128" r="120" fill="url(#grad1)" opacity="0.15"/>
+  
+  <!-- Main companion figure - stylized C/AI representation -->
+  <g filter="url(#glow)">
+    <!-- Head/CPU -->
+    <circle cx="128" cy="80" r="35" fill="url(#grad2)"/>
+    
+    <!-- Eyes -->
+    <circle cx="118" cy="75" r="6" fill="#1a1205"/>
+    <circle cx="138" cy="75" r="6" fill="#1a1205"/>
+    
+    <!-- Smile -->
+    <path d="M 118 90 Q 128 98 138 90" stroke="#1a1205" stroke-width="3" fill="none" stroke-linecap="round"/>
+    
+    <!-- Body/Connector -->
+    <path d="M 128 115 L 128 170" stroke="url(#grad2)" stroke-width="12" stroke-linecap="round"/>
+    
+    <!-- Neural network nodes -->
+    <circle cx="85" cy="100" r="8" fill="#3ecf9a" opacity="0.8"/>
+    <circle cx="171" cy="100" r="8" fill="#3ecf9a" opacity="0.8"/>
+    <circle cx="100" cy="140" r="6" fill="#d7a84a" opacity="0.8"/>
+    <circle cx="156" cy="140" r="6" fill="#d7a84a" opacity="0.8"/>
+    
+    <!-- Connection lines -->
+    <line x1="93" cy="100" x2="128" y2="80" stroke="#3ecf9a" stroke-width="2" opacity="0.6"/>
+    <line x1="163" cy="100" x2="128" y2="80" stroke="#3ecf9a" stroke-width="2" opacity="0.6"/>
+    <line x1="106" cy="140" x2="128" y2="115" stroke="#d7a84a" stroke-width="2" opacity="0.6"/>
+    <line x1="150" cy="140" x2="128" y2="115" stroke="#d7a84a" stroke-width="2" opacity="0.6"/>
+    
+    <!-- Voice waves -->
+    <path d="M 60 80 Q 50 80 50 80" stroke="#3ecf9a" stroke-width="3" stroke-linecap="round" opacity="0.7"/>
+    <path d="M 55 70 Q 40 70 40 70" stroke="#3ecf9a" stroke-width="3" stroke-linecap="round" opacity="0.5"/>
+    <path d="M 196 80 Q 206 80 206 80" stroke="#3ecf9a" stroke-width="3" stroke-linecap="round" opacity="0.7"/>
+    <path d="M 201 70 Q 216 70 216 70" stroke="#3ecf9a" stroke-width="3" stroke-linecap="round" opacity="0.5"/>
+  </g>
+  
+  <!-- Base platform -->
+  <ellipse cx="128" cy="190" rx="50" ry="12" fill="url(#grad1)" opacity="0.3"/>
+</svg>
