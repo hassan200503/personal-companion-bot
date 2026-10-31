@@ -258,9 +258,10 @@ export class GoalExecutor {
   /**
    * Check a postcondition (simplified - in production would use actual verification)
    */
-  private async checkPostcondition(_postcondition: string): Promise<boolean> {
+  private async checkPostcondition(postcondition: string): Promise<boolean> {
     // In production, this would execute verification logic
     // For now, return true to allow testing
+    console.log(`Checking postcondition: ${postcondition}`);
     return true;
   }
 

@@ -36,7 +36,8 @@ export class SpeakerVerification {
    * In degraded mode (no model), returns true with a warning.
    * This satisfies the "graceful degradation" requirement from G016.
    */
-  async verify(_audioBuffer: ArrayBuffer): Promise<VerificationResult> {
+  async verify(audioBuffer: ArrayBuffer): Promise<VerificationResult> {
+    console.log(`Verifying audio buffer of size: ${audioBuffer.byteLength} bytes`);
     if (!this.config.enabled) {
       return { isOwner: true, confidence: 1.0, degraded: false };
     }
@@ -56,7 +57,8 @@ export class SpeakerVerification {
    * Enroll the owner's voice for future verification.
    * Requires 5+ samples for reliable verification.
    */
-  async enrollSample(_audioBuffer: ArrayBuffer): Promise<{ success: boolean; sampleCount: number; needsMore: boolean }> {
+  async enrollSample(audioBuffer: ArrayBuffer): Promise<{ success: boolean; sampleCount: number; needsMore: boolean }> {
+    console.log(`Enrolling voice sample of size: ${audioBuffer.byteLength} bytes`);
     if (!this.config.enabled) {
       return { success: false, sampleCount: 0, needsMore: false };
     }

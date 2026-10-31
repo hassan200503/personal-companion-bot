@@ -142,7 +142,7 @@ describe('EmailAnalyzer', () => {
   it('selects important emails', () => {
     const analyzer = new EmailAnalyzer();
     
-    const emails: any[] = [
+    const emails = [
       {
         id: 'email_1',
         threadId: 'thread_1',

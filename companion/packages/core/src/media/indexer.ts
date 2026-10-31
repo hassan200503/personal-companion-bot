@@ -48,7 +48,7 @@ export class MediaIndexer {
     let totalFiles = 0;
 
     for (const root of this.directories) {
-      await this.walkDirectory(root, this.maxDepth, now, totalFiles);
+      totalFiles = await this.walkDirectory(root, this.maxDepth, now, totalFiles);
     }
 
     // Remove files that no longer exist
@@ -71,8 +71,8 @@ export class MediaIndexer {
     depth: number,
     now: number,
     fileCount: number
-  ): Promise<void> {
-    if (depth < 0 || fileCount >= this.maxFiles) return;
+  ): Promise<number> {
+    if (depth < 0 || fileCount >= this.maxFiles) return fileCount;
 
     try {
       const entries = readdirSync(dir, { withFileTypes: true });
@@ -104,18 +104,20 @@ export class MediaIndexer {
             // Skip files that can't be accessed
           }
         } else if (entry.isDirectory()) {
-          await this.walkDirectory(fullPath, depth - 1, now, fileCount);
+          fileCount = await this.walkDirectory(fullPath, depth - 1, now, fileCount);
         }
       }
     } catch {
       // Skip directories that can't be accessed
     }
+    return fileCount;
   }
 
   /**
    * Remove files that no longer exist
    */
-  private pruneDeletedFiles(_now: number): void {
+  private pruneDeletedFiles(now: number): void {
+    console.log(`Pruning files as of ${new Date(now).toISOString()}`);
     for (const [path] of this.index.entries()) {
       if (!existsSync(path)) {
         this.index.delete(path);

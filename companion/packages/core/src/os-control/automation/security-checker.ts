@@ -33,8 +33,9 @@ export class SecurityChecker {
   /**
    * Check if process integrity levels allow interaction
    */
-  async checkProcessIntegrityLevel(_targetProcessId: number): Promise<void> {
+  async checkProcessIntegrityLevel(targetProcessId: number): Promise<void> {
     if (!this.config.checkIntegrityLevels) return;
+    console.log(`Checking integrity level for process ${targetProcessId}`);
     
     // For now, skip actual integrity check on Windows
     // TODO: Implement native module for GetTokenInformation

@@ -1,6 +1,6 @@
 /**
  * Enhanced UI Automation Bridge
- * 
+ *
  * Extends the basic UIA PowerShell bridge with:
  * - Action execution with verification
  * - Error handling and diagnostics
@@ -8,11 +8,16 @@
  */
 
 import { execFile } from 'node:child_process';
-import type { UiAutomationSelector, UiAutomationAction, UiAutomationActionResult } from '../uia.js';
+import type { UiAutomationSelector, UiAutomationAction, UiAutomationActionResult, UiAutomationControl } from '../uia.js';
 import { probeUiAutomation as probe } from '../uia.js';
 
 // Re-export for convenience
 export { probe as probeUiAutomation };
+
+interface UiAutomationCandidate {
+  control: UiAutomationControl;
+  similarity: number;
+}
 
 /**
  * Perform a UI automation action on an element
@@ -248,11 +253,11 @@ export async function verifyElementExists(
 ): Promise<boolean> {
   try {
     const probeResult = await probe(processId, timeoutMs, windowName);
-    
-    return probeResult.controls.some((c: any) =>
+
+    return probeResult.controls.some((c) =>
       (!selector.automationId || c.automationId === selector.automationId) &&
       (!selector.name || c.name === selector.name) &&
-      (!selector.controlType || c.controlType.includes(selector.controlType))
+      (!selector.controlType || (c.controlType && c.controlType.includes(selector.controlType)))
     );
   } catch {
     return false;
@@ -268,17 +273,17 @@ export async function findElementByFuzzyName(
   nameQuery: string,
   minSimilarity = 0.7,
   timeoutMs = 5000
-): Promise<{ found: boolean; control?: any; similarity?: number }> {
+): Promise<{ found: boolean; control?: UiAutomationControl; similarity?: number }> {
   try {
     const probeResult = await probe(processId, timeoutMs, windowName);
-    
+
     const candidates = probeResult.controls
-      .map((c: any) => ({
+      .map((c): UiAutomationCandidate => ({
         control: c,
-        similarity: calculateSimilarity(nameQuery, c.name)
+        similarity: c.name ? calculateSimilarity(nameQuery, c.name) : 0
       }))
-      .filter((x: any) => x.similarity >= minSimilarity)
-      .sort((a: any, b: any) => b.similarity - a.similarity);
+      .filter((x: UiAutomationCandidate) => x.similarity >= minSimilarity)
+      .sort((a: UiAutomationCandidate, b: UiAutomationCandidate) => b.similarity - a.similarity);
     
     if (candidates.length > 0) {
       const best = candidates[0]!;

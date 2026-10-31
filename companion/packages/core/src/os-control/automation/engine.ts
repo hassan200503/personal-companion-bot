@@ -355,6 +355,7 @@ export class AutomationEngine {
           
         } catch (error) {
           // Element not found yet, continue polling
+          console.error('Element not found:', error);
         }
         
         if (Date.now() - startTime >= timeoutMs) break;

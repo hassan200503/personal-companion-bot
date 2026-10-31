@@ -35,28 +35,31 @@ export class MetricsCollector {
   /**
    * Record failed operation
    */
-  recordFailure(operationKey: string, latencyMs: number, _error: unknown): void {
+  recordFailure(operationKey: string, latencyMs: number, error: unknown): void {
     const metrics = this.getOrCreateMetrics(operationKey);
     metrics.failures++;
     metrics.latencies.push(latencyMs);
-    
+    console.error(`Operation ${operationKey} failed:`, error);
+
     if (metrics.latencies.length > 100) {
       metrics.latencies.shift();
     }
   }
-  
+
   /**
    * Record cache hit
    */
-  recordCacheHit(_cacheType: string): void {
+  recordCacheHit(cacheType: string): void {
     this.cacheHits++;
+    console.log(`Cache hit for ${cacheType}`);
   }
-  
+
   /**
    * Record cache miss
    */
-  recordCacheMiss(_cacheType: string): void {
+  recordCacheMiss(cacheType: string): void {
     this.cacheMisses++;
+    console.log(`Cache miss for ${cacheType}`);
   }
   
   /**

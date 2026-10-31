@@ -72,8 +72,9 @@ export class WhatsAppAdapter {
   /**
    * Connect to WhatsApp Desktop
    */
-  async connect(_timeoutMs = 15000): Promise<{ connected: boolean; error?: string }> {
+  async connect(timeoutMs = 15000): Promise<{ connected: boolean; error?: string }> {
     try {
+      console.log(`Connecting to WhatsApp with timeout: ${timeoutMs}ms`);
       // Find WhatsApp process
       const processInfo = await this.findWhatsAppProcess();
       
@@ -238,9 +239,10 @@ export class WhatsAppAdapter {
   async initiateCall(
     contactName: string,
     callType: 'voice' | 'video',
-    _timeoutMs = 40000
+    timeoutMs = 40000
   ): Promise<CallResult> {
     const startTime = Date.now();
+    console.log(`Initiating ${callType} call to ${contactName} with timeout: ${timeoutMs}ms`);
     
     if (!this.processId) {
       return {
@@ -426,6 +428,7 @@ export class WhatsAppAdapter {
         
       } catch (error) {
         // Probe failed, continue monitoring
+        console.error('Probe failed:', error);
       }
       
       const delay = intervals[Math.min(intervalIndex, intervals.length - 1)]!;
@@ -445,8 +448,9 @@ export class WhatsAppAdapter {
   async sendMessage(
     contactName: string,
     message: string,
-    _timeoutMs = 15000
+    timeoutMs = 15000
   ): Promise<MessageResult> {
+    console.log(`Sending message to ${contactName} with timeout: ${timeoutMs}ms`);
     if (!this.processId) {
       return {
         success: false,
