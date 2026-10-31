@@ -473,9 +473,9 @@ This project is **UNLICENSED**. All rights reserved.
 **Hassan**
 
 - **GitHub**: [@hassan200503](https://github.com/hassan200503)
-- **Email**: tech03082005082005@gmail.com
-- **LinkedIn**: [Connect with me](https://linkedin.com/in/your-profile)
-- **Portfolio**: [View my work](https://your-portfolio.com)
+- **Email**: karungwahassan03@gmail.com
+- **LinkedIn**: [Connect with me](https://www.linkedin.com/in/hassan-karungwa)
+- **Portfolio**: [View my work](https://hassan200503.github.io/)
 
 ### About Me
 
