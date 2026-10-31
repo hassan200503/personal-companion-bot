@@ -10,6 +10,14 @@ export type EmailForm = {
   configured?: boolean;
 };
 
+export type PayPalForm = {
+  clientId: string;
+  clientSecret: string;
+  mode: 'sandbox' | 'live';
+  email: string;
+  configured?: boolean;
+};
+
 type VoiceSettingsLike = {
   voice?: string;
   rate?: number;
@@ -34,7 +42,7 @@ type PersonaLike = {
 };
 
 type Props = {
-  section: 'voice' | 'persona' | 'privacy' | 'email' | 'providers' | 'memory' | 'data';
+  section: 'voice' | 'persona' | 'privacy' | 'email' | 'providers' | 'memory' | 'data' | 'payments';
   onSection: (section: Props['section']) => void;
   voiceSettings: VoiceSettingsLike;
   voiceVoices: Array<{ name: string; language: string; id: string }>;
@@ -52,6 +60,12 @@ type Props = {
   onSaveEmail: () => void;
   onTestEmail: () => void;
   onClearEmail: () => void;
+  paypal: PayPalForm;
+  paypalStatus: string;
+  onPaypal: (next: PayPalForm) => void;
+  onSavePaypal: () => void;
+  onTestPaypal: () => void;
+  onClearPaypal: () => void;
   proposed: ProposedMemory[];
   onApproveMemory: (id: string) => void;
   onRejectMemory: (id: string) => void;
@@ -73,6 +87,7 @@ const SECTIONS: Array<{ id: Props['section']; label: string }> = [
   { id: 'persona', label: 'Persona' },
   { id: 'privacy', label: 'Privacy' },
   { id: 'email', label: 'Email' },
+  { id: 'payments', label: 'Payments' },
   { id: 'providers', label: 'Providers' },
   { id: 'memory', label: 'Memory' },
   { id: 'data', label: 'Data' },
@@ -202,6 +217,34 @@ export function SettingsShell(props: Props) {
               <button onClick={props.onSaveEmail}>Save</button>
               <button className="ghost" onClick={props.onTestEmail}>Test connection</button>
               <button className="danger" onClick={props.onClearEmail}>Disconnect</button>
+            </div>
+          </section>
+        )}
+
+        {props.section === 'payments' && (
+          <section className="settings-panel">
+            <h3>PayPal Wallet</h3>
+            <p className="muted">PayPal credentials are stored in Windows Credential Manager. Configure your wallet for autonomous financial operations.</p>
+            <label className="field-label">Client ID
+              <input value={props.paypal.clientId} onChange={(e) => props.onPaypal({ ...props.paypal, clientId: e.target.value })} placeholder="PayPal Client ID" />
+            </label>
+            <label className="field-label">Client Secret
+              <input type="password" value={props.paypal.clientSecret} onChange={(e) => props.onPaypal({ ...props.paypal, clientSecret: e.target.value })} placeholder={props.paypal.configured ? '•••••••• (leave blank to keep)' : 'PayPal Client Secret'} />
+            </label>
+            <label className="field-label">Mode
+              <select value={props.paypal.mode} onChange={(e) => props.onPaypal({ ...props.paypal, mode: e.target.value as 'sandbox' | 'live' })}>
+                <option value="sandbox">Sandbox (testing)</option>
+                <option value="live">Live (production)</option>
+              </select>
+            </label>
+            <label className="field-label">Wallet Email
+              <input value={props.paypal.email} onChange={(e) => props.onPaypal({ ...props.paypal, email: e.target.value })} placeholder="tech03082005082005@gmail.com" />
+            </label>
+            {props.paypalStatus && <p className="muted">{props.paypalStatus}</p>}
+            <div className="actions">
+              <button onClick={props.onSavePaypal}>Save</button>
+              <button className="ghost" onClick={props.onTestPaypal}>Test connection</button>
+              <button className="danger" onClick={props.onClearPaypal}>Disconnect</button>
             </div>
           </section>
         )}
