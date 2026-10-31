@@ -2,8 +2,8 @@
 
 Last updated: 2026-10-31
 Brief: `docs/AGENT_BRIEF.md` (v3 master brief, adopted 2026-10-29). The previous handoff brief is archived at `docs/archive/AGENT_BRIEF-v1-handoff.md`.
-Current milestone: M1 voice-first companion slice
-Status: Speech-first production slice (scope B) is in tree: renderer mic + VAD → Gemini transcription (consent-gated), WinRT helper TTS-only, hardened call/WhatsApp/media honesty, voice-first UI, and a spoken voice-guided onboarding flow that collects owner details, bot preferences, privacy preset and cloud-speech consent. Latest full verify: 51 files / 332 tests. Email, wake word, and signed/clean-machine install remain out of scope.
+Current milestone: M2 Autonomous Capabilities Sprint 1
+Status: Sprint 1 partial delivery: Performance optimization (ResponseCache) and WhatsApp calling by name (whatsappCallTool) implemented. Owner approved gates G6, G7, G5, G3 for autonomous capabilities. Latest full verify: 52 files / 341 tests. Phase 2 (Learning Engine) and Phase 3 (Autonomous Capabilities) remain in progress.
 
 ## Recent Production Hardening (2026-10-31)
 
@@ -12,8 +12,33 @@ Status: Speech-first production slice (scope B) is in tree: renderer mic + VAD �
 - ✅ G016: Speaker verification implemented in degraded mode (graceful fallback, consent-gated)
 - ✅ All 13 P0 gaps fixed with tests
 - ✅ All 7 P1 gaps fixed (2 in degraded mode)
-- ✅ 326+ tests passing, 0 type errors
+- ✅ 341 tests passing, 0 type errors
 - ✅ Comprehensive documentation in ENTERPRISE_READY.md
+
+## Sprint 1 - Autonomous Capabilities (2026-10-31)
+
+**Gate Approvals:**
+- ✅ G6: Autonomous Money-Making - Owner approved with financial risk acceptance
+- ✅ G7: Autonomous Goal Pursuit - Owner approved with autonomous action risk acceptance
+- ✅ G5: Gmail Integration - Owner approved for email read-aloud and analysis
+- ✅ G3: WhatsApp Real Calling - Owner approved with account risk acceptance
+
+**Sprint 1 Deliverables (Partial):**
+- ✅ ResponseCache: LRU cache with 5-minute TTL for common queries
+- ✅ Cache integrated into DefaultConversationEngine
+- ✅ whatsappCallTool: Voice/video calling by contact name
+- ✅ WhatsAppAdapter integration with contact search
+- ✅ Class 3 risk with confirmation requirement
+- ✅ 8 new tests for response cache
+- ✅ Documentation: GATE_APPROVALS.md, IMPLEMENTATION_ROADMAP.md
+
+**Test Results:**
+- 52 files / 341 tests passing (up from 333)
+- 0 type errors
+- npm run package: installer rebuilt successfully
+
+**Status:** Sprint 1 partial - performance + WhatsApp calling complete.
+**Next:** Media indexing, learning engine, autonomous capabilities (Phases 2-4).
 
 **G014 Implementation:**
 - executor.ts: Added read-back branch in tool execution flow
