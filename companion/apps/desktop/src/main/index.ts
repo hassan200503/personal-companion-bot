@@ -1,5 +1,5 @@
 /* eslint-disable no-empty */
-import { app, BrowserWindow, ipcMain, Tray, Menu, nativeImage, shell, net, session, globalShortcut, type IpcMainInvokeEvent } from "electron";
+import { app, BrowserWindow, ipcMain, Tray, Menu, nativeImage, shell, net, session, globalShortcut, powerMonitor, type IpcMainInvokeEvent } from "electron";
 import { randomUUID } from "node:crypto";
 import { spawn } from 'node:child_process';
 import { appendFileSync, mkdirSync, writeFileSync, unlinkSync, statSync } from "node:fs";
@@ -28,6 +28,7 @@ import {
   ProviderRouter,
   getProviderEntry,
   getProviderCatalog,
+  isRetiredProviderModel,
   discoverProviderModels,
   DefaultOnboardingPipeline,
   createCustomOpenAiProvider,
@@ -129,6 +130,8 @@ let tray: Tray | null = null;
 let backgroundScheduler: Scheduler | null = null;
 let backgroundPaused = false;
 const emergencyStop = new EmergencyStop();
+const activeChatControllers = new Set<AbortController>();
+let sessionLocked = false;
 let heartbeatTimer: NodeJS.Timeout | null = null;
 
 function readOwnerProfile(): Record<string, unknown> {
@@ -258,6 +261,12 @@ function saveProviderModel(providerId: string, model: string): void {
   }
 }
 
+function resolveProviderModel(providerId: string, models: string[], requestedModel?: string): string | undefined {
+  const saved = requestedModel?.trim() || getSavedProviderModel(providerId);
+  if (saved && !isRetiredProviderModel(providerId, saved)) return saved;
+  return models[0];
+}
+
 function deleteSavedProviderModel(providerId: string): void {
   try {
     companionDatabase?.raw.prepare('DELETE FROM settings WHERE key = ?').run(modelSettingKey(providerId));
@@ -323,7 +332,8 @@ async function openStorage(): Promise<void> {
               if (key) {
                 const entry = getProviderEntry(id);
                 if (entry) {
-                  const model = getSavedProviderModel(id) || entry.models[0];
+                  const model = resolveProviderModel(id, entry.models);
+                  if (model && model !== getSavedProviderModel(id)) saveProviderModel(id, model);
                   router.register(entry.factory(key), 100, model);
                   if (!defaultModel && entry.models.length > 0) {
                     defaultModel = model ?? '';
@@ -504,7 +514,7 @@ async function checkCredentialStore(): Promise<void> {
     const entry = getProviderEntry(providerId);
     if (!entry) return { valid: false, error: 'Unknown provider' };
     await credentialStore.set(providerId, apiKey);
-    const model = requestedModel?.trim() || entry.models[0];
+    const model = resolveProviderModel(providerId, entry.models, requestedModel);
     providerRouter.register(entry.factory(apiKey), 100, model);
     if (model) saveProviderModel(providerId, model);
     const registeredModels = providerRouter.getProviders().map((registration) => registration.model);
@@ -833,10 +843,33 @@ function registerIpc(): void {
         : 'The owner is typing. The reply is shown in the chat log.';
       conversationEngine.setSystemPrompt(buildCompanionPrompt(companionDatabase, { modality, situation }));
     } catch { /* ignore */ }
-    const msg = await conversationEngine.sendMessage(conversationId, content, new AbortController().signal);
-    // Learning is proposal-only. The conversation recorder creates a local
-    // proposed memory; only the approval inbox may promote it to a fact.
-    return { id: msg.id, role: msg.role, content: msg.content, createdAt: msg.createdAt };
+    const controller = new AbortController();
+    const disarm = emergencyStop.arm(controller);
+    activeChatControllers.add(controller);
+    const timeout = setTimeout(() => controller.abort(), 90_000);
+    try {
+      const msg = await conversationEngine.sendMessage(conversationId, content, controller.signal);
+      // Learning is proposal-only. The conversation recorder creates a local
+      // proposed memory; only the approval inbox may promote it to a fact.
+      return { id: msg.id, role: msg.role, content: msg.content, createdAt: msg.createdAt };
+    } finally {
+      clearTimeout(timeout);
+      activeChatControllers.delete(controller);
+      disarm();
+    }
+  });
+
+  ipcMain.handle(ipcChannels.chatAbort, async (event, suppliedToken: unknown): Promise<unknown> => {
+    assertTrustedSender(event, suppliedToken);
+    const aborted = activeChatControllers.size;
+    for (const controller of activeChatControllers) {
+      try {
+        controller.abort(new Error('owner_stop'));
+      } catch {
+        // Abort must never fail the stop path.
+      }
+    }
+    return { aborted };
   });
 
     ipcMain.handle(ipcChannels.appOpenExternal, async (event, suppliedToken: unknown, url: string): Promise<void> => {
@@ -1028,6 +1061,11 @@ function registerIpc(): void {
   // Voice (native Windows Speech helper with System.Speech fallback)
   ipcMain.handle(ipcChannels.voiceStart, async (event, suppliedToken: unknown): Promise<unknown> => {
     assertTrustedSender(event, suppliedToken);
+    const environment = await probeSecurityEnvironment({ fresh: true });
+    sessionLocked = environment.screenLocked || environment.secureDesktop;
+    if (sessionLocked) {
+      return { started: false, engine: 'none', message: 'Voice is paused while Windows is locked.' };
+    }
     return voiceService ? voiceService.start(readVoiceSettings()) : { started: false, engine: 'none', message: 'Voice service unavailable.' };
   });
 
@@ -1038,6 +1076,9 @@ function registerIpc(): void {
 
   ipcMain.handle(ipcChannels.voiceTranscribe, async (event, suppliedToken: unknown, audio: unknown, mimeType: unknown): Promise<unknown> => {
     assertTrustedSender(event, suppliedToken);
+    if (sessionLocked) {
+      return { ok: false, error: 'Voice is paused while Windows is locked.' };
+    }
     const settings = readVoiceSettings();
     if (!settings.cloudSpeechConsent) {
       return { ok: false, error: 'Cloud speech is off. Enable Gemini speech transcription in Voice settings first.' };
@@ -1051,6 +1092,7 @@ function registerIpc(): void {
       return { ok: false, error: 'Unsupported speech audio format.' };
     }
     const controller = new AbortController();
+    const disarm = emergencyStop.arm(controller);
     const timer = setTimeout(() => controller.abort(), 30_000);
     try {
       const result = await providerRouter.transcribe({ audio, mimeType, language: settings.language }, controller.signal);
@@ -1064,6 +1106,7 @@ function registerIpc(): void {
       return { ok: false, error: message };
     } finally {
       clearTimeout(timer);
+      disarm();
     }
   });
 
@@ -1657,6 +1700,24 @@ app.whenReady().then(async () => {
     permission === "media"
   ));
   configureFileLogging();
+  powerMonitor.on('lock-screen', () => {
+    sessionLocked = true;
+    for (const controller of activeChatControllers) {
+      try { controller.abort(new Error('session_locked')); } catch { /* ignore */ }
+    }
+    void voiceService?.stop().catch(() => undefined);
+    try { voiceService?.stopSpeaking(); } catch { /* ignore */ }
+  });
+  powerMonitor.on('unlock-screen', () => {
+    sessionLocked = false;
+  });
+  powerMonitor.on('suspend', () => {
+    sessionLocked = true;
+    void voiceService?.stop().catch(() => undefined);
+  });
+  powerMonitor.on('resume', () => {
+    sessionLocked = false;
+  });
   removeLifecycleMarker('crash-marker.json');
   removeLifecycleMarker('stop-marker.json');
   startHeartbeat();
@@ -1673,13 +1734,16 @@ app.whenReady().then(async () => {
       logger.warn("start-apps cache warmup failed", { error });
     });
   registerIpc();
-  globalShortcut.register('Control+Shift+Escape', () => {
+  const emergencyShortcut = 'Control+Alt+Shift+Escape';
+  if (!globalShortcut.register(emergencyShortcut, () => {
     emergencyStop.stopAll();
     confirmationManager?.rejectAll?.();
     stopSpeaking();
     voiceService?.dispose();
     emergencyStop.reset();
-  });
+  })) {
+    logger.warn('emergency shortcut unavailable', { shortcut: emergencyShortcut });
+  }
   await createWindow();
   createTray();
 
@@ -1715,6 +1779,12 @@ app.on("before-quit", () => {
   tray = null;
   companionDatabase?.close();
   companionDatabase = null;
+});
+
+process.on('unhandledRejection', (reason) => {
+  try {
+    logger.error('unhandled rejection', { reason: reason instanceof Error ? reason.stack ?? reason.message : String(reason) });
+  } catch { /* logging must never crash the handler */ }
 });
 
 process.on('uncaughtException', (error) => {

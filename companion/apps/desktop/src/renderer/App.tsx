@@ -122,6 +122,7 @@ export default function App() {
   const autoStartedRef = useRef(false);
   const captureRef = useRef<VoiceCapture | null>(null);
   const voiceSettingsRef = useRef<any>({});
+  const windowFocusedRef = useRef(true);
   const consecutiveNoiseRef = useRef(0);
 
   const selected = providers.find((p) => p.id === selectedProvider) || providers[0];
@@ -275,6 +276,25 @@ export default function App() {
       stopListening();
     }
   }, [muted]);
+
+  useEffect(() => {
+    const updateFocus = () => {
+      const focused = document.hasFocus() && !document.hidden;
+      windowFocusedRef.current = focused;
+      if (!focused && voiceModeRef.current && voiceSettingsRef.current?.listenWhenUnfocused !== true) {
+        stopListening();
+      }
+    };
+    window.addEventListener('focus', updateFocus);
+    window.addEventListener('blur', updateFocus);
+    document.addEventListener('visibilitychange', updateFocus);
+    updateFocus();
+    return () => {
+      window.removeEventListener('focus', updateFocus);
+      window.removeEventListener('blur', updateFocus);
+      document.removeEventListener('visibilitychange', updateFocus);
+    };
+  }, []);
 
   useEffect(() => {
     if (greetedRef.current || !activeConv || !ownerLoaded) return;
@@ -888,6 +908,10 @@ export default function App() {
       setVoiceError('Unmute before starting live listening.');
       return;
     }
+    if (!windowFocusedRef.current && voiceSettingsRef.current?.listenWhenUnfocused !== true) {
+      setVoiceError('Listening is paused while Companion is in the background. Enable “Listen when unfocused” in Voice settings or focus the window.');
+      return;
+    }
     setVoiceError('');
     setVoiceWarning('');
     setSpeechPrivacyNeeded(false);
@@ -1215,6 +1239,7 @@ export default function App() {
 
   async function stopEverything(): Promise<void> {
     stopListening();
+    try { await window.companion.chatAbort(); } catch { /* ignore */ }
     try { await window.companion.voiceStopSpeaking(); } catch { /* ignore */ }
     if (pendingAction) {
       try { await window.companion.osRejectTool(pendingAction.actionHash); } catch { /* ignore */ }

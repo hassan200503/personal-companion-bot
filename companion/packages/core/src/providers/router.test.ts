@@ -144,14 +144,65 @@ describe('ProviderRouter', () => {
     const request = { model: 'test', messages: [{ role: 'user' as const, content: 'hi' }] };
     await expect(router.complete(request, new AbortController().signal)).rejects.toThrow(ProviderError);
   });
-  it('does not retry non-retryable errors', async () => {
+  it('falls back after a non-retryable provider error', async () => {
     provider1.setConfig({ completeError: new ProviderError('auth_invalid', 'bad key', false) });
     const request = { model: 'test', messages: [{ role: 'user' as const, content: 'hi' }] };
-    try {
-      await router.complete(request, new AbortController().signal);
-    } catch (e) {
-      expect((e as ProviderError).code).toBe('auth_invalid');
-    }
+    const response = await router.complete(request, new AbortController().signal);
+    expect(response.content).toBe('Mock response');
+    expect(provider1.getCompleteCalls()).toHaveLength(1);
+    expect(provider2.getCompleteCalls()).toHaveLength(1);
+  });
+  it('retries the only provider after a transient failure', async () => {
+    const single = new ProviderRouter({ maxRetries: 3 });
+    const only = new MockProvider({ id: 'only', completeFailures: 1 });
+    single.register(only, 1);
+    const request = { model: 'test', messages: [{ role: 'user' as const, content: 'hi' }] };
+    const response = await single.complete(request, new AbortController().signal);
+    expect(response.content).toBe('Mock response');
+    expect(only.getCompleteCalls()).toHaveLength(2);
+  });
+  it('passes the registered model to transcription', async () => {
+    const single = new ProviderRouter({ maxRetries: 1 });
+    const only = new MockProvider({ id: 'only' });
+    single.register(only, 1, 'gemini-3.5-flash-lite');
+    const result = await single.transcribe(
+      { audio: 'AAAA', mimeType: 'audio/wav' },
+      new AbortController().signal
+    );
+    expect(result.text).toBe('Mock transcript');
+    expect(only.getTranscribeCalls()[0]?.model).toBe('gemini-3.5-flash-lite');
+  });
+  it('keeps transcription outages from opening the chat breaker', async () => {
+    const single = new ProviderRouter({
+      maxRetries: 1,
+      circuitConfig: { failureThreshold: 1, cooldownMs: 60_000 },
+    });
+    const only = new MockProvider({
+      id: 'only',
+      transcribeError: new ProviderError('provider_down', 'down', true),
+    });
+    single.register(only, 1);
+    await expect(
+      single.transcribe({ audio: 'AAAA', mimeType: 'audio/wav' }, new AbortController().signal)
+    ).rejects.toThrow(ProviderError);
+    expect(single.getTranscriptionCircuitBreaker('only')?.isOpen()).toBe(true);
+    expect(single.getCircuitBreaker('only')?.isOpen()).toBe(false);
+    expect((await single.selectProvider())?.id).toBe('only');
+  });
+  it('does not open the transcription breaker for model configuration errors', async () => {
+    const single = new ProviderRouter({
+      maxRetries: 1,
+      circuitConfig: { failureThreshold: 1, cooldownMs: 60_000 },
+    });
+    const only = new MockProvider({
+      id: 'only',
+      transcribeError: new ProviderError('unknown', 'model is retired', false),
+    });
+    single.register(only, 1);
+    await expect(
+      single.transcribe({ audio: 'AAAA', mimeType: 'audio/wav' }, new AbortController().signal)
+    ).rejects.toThrow(ProviderError);
+    expect(single.getTranscriptionCircuitBreaker('only')?.isOpen()).toBe(false);
   });
   it('handles rate limiting', async () => {
     provider1.setConfig({ rateLimited: true, retryAfter: 60 });

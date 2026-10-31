@@ -192,9 +192,19 @@ const DEFAULT_ROUTER_CONFIG: RouterConfig = {
   circuitConfig: {},
 };
 
+function isProviderOutage(error: Error): boolean {
+  if (!(error instanceof ProviderError)) return true;
+  return error.code === 'provider_down' || error.code === 'timeout' || error.code === 'network';
+}
+
+function abortError(signal: AbortSignal): Error {
+  return signal.reason instanceof Error ? signal.reason : new Error('Request aborted');
+}
+
 export class ProviderRouter {
   private providers: Map<string, RouterProvider> = new Map();
   private circuitBreakers: Map<string, CircuitBreaker> = new Map();
+  private transcriptionBreakers: Map<string, CircuitBreaker> = new Map();
   private healthCache: Map<string, number> = new Map();
   private quotaLedger: QuotaLedger;
   private config: RouterConfig;
@@ -212,12 +222,14 @@ export class ProviderRouter {
       model,
     });
     this.circuitBreakers.set(provider.id, new CircuitBreaker(this.config.circuitConfig));
+    this.transcriptionBreakers.set(provider.id, new CircuitBreaker(this.config.circuitConfig));
     this.healthCache.delete(provider.id);
   }
 
   unregister(providerId: string): void {
     this.providers.delete(providerId);
     this.circuitBreakers.delete(providerId);
+    this.transcriptionBreakers.delete(providerId);
     this.healthCache.delete(providerId);
   }
 
@@ -244,6 +256,10 @@ export class ProviderRouter {
 
   getCircuitBreaker(providerId: string): CircuitBreaker | undefined {
     return this.circuitBreakers.get(providerId);
+  }
+
+  getTranscriptionCircuitBreaker(providerId: string): CircuitBreaker | undefined {
+    return this.transcriptionBreakers.get(providerId);
   }
 
   async selectProvider(
@@ -283,23 +299,28 @@ export class ProviderRouter {
     request: AudioTranscriptionRequest,
     signal: AbortSignal
   ): Promise<AudioTranscriptionResult> {
+    if (signal.aborted) throw abortError(signal);
     let lastError: Error | undefined;
     const maxAttempts = Math.max(1, this.config.maxRetries);
     for (const rp of this.getProviders()) {
       if (!rp.provider.transcribe) continue;
-      const breaker = this.circuitBreakers.get(rp.provider.id);
+      const breaker = this.transcriptionBreakers.get(rp.provider.id);
       if (breaker?.isOpen()) continue;
+      if (this.quotaLedger.isRateLimited(rp.provider.id)) continue;
+      const providerRequest = rp.model ? { ...request, model: rp.model } : request;
       for (let attempt = 0; attempt < maxAttempts; attempt++) {
-        if (signal.aborted) break;
+        if (signal.aborted) throw abortError(signal);
         try {
-          const result = await rp.provider.transcribe(request, signal);
+          const result = await rp.provider.transcribe(providerRequest, signal);
           breaker?.recordSuccess();
           return result;
         } catch (error) {
+          if (signal.aborted) throw abortError(signal);
           lastError = error instanceof Error ? error : new Error(String(error));
-          breaker?.recordFailure();
           if (error instanceof ProviderError && error.code === 'rate_limited') {
             this.quotaLedger.recordRateLimit(rp.provider.id, error.retryAfter || 60);
+          } else if (isProviderOutage(lastError)) {
+            breaker?.recordFailure();
           }
           if (error instanceof ProviderError && !error.retryable) break;
           // Brief backoff for 503 / high-demand spikes before retrying the same provider.
@@ -319,12 +340,18 @@ export class ProviderRouter {
     request: ChatCompletionRequest,
     signal: AbortSignal
   ): Promise<ChatCompletionResponse> {
+    if (signal.aborted) throw abortError(signal);
     const tried: string[] = [];
     let lastError: Error | undefined;
 
     for (let attempt = 0; attempt < this.config.maxRetries; attempt++) {
       const provider = await this.selectProvider(tried);
       if (!provider) {
+        if (tried.length > 0 && attempt + 1 < this.config.maxRetries) {
+          tried.length = 0;
+          continue;
+        }
+        if (lastError) throw lastError;
         throw new ProviderError(
           'provider_down',
           'No available providers',
@@ -351,20 +378,18 @@ export class ProviderRouter {
 
         return response;
       } catch (error) {
+        if (signal.aborted) throw abortError(signal);
         lastError = error instanceof Error ? error : new Error(String(error));
-        cb.recordFailure();
-        tried.push(provider.id);
-
         if (error instanceof ProviderError && error.code === 'rate_limited') {
           this.quotaLedger.recordRateLimit(
             provider.id,
             error.retryAfter || 60
           );
+        } else if (isProviderOutage(lastError)) {
+          cb.recordFailure();
         }
+        tried.push(provider.id);
 
-        if (error instanceof ProviderError && !error.retryable) {
-          throw error;
-        }
         if (attempt + 1 < this.config.maxRetries && !signal.aborted) {
           const waitMs = Math.min(2500, 400 * (attempt + 1));
           await new Promise((resolve) => setTimeout(resolve, waitMs));
@@ -379,12 +404,18 @@ export class ProviderRouter {
     request: ChatCompletionRequest,
     signal: AbortSignal
   ): AsyncIterable<ChatCompletionChunk> {
+    if (signal.aborted) throw abortError(signal);
     const tried: string[] = [];
     let lastError: Error | undefined;
 
     for (let attempt = 0; attempt < this.config.maxRetries; attempt++) {
       const provider = await this.selectProvider(tried);
       if (!provider) {
+        if (tried.length > 0 && attempt + 1 < this.config.maxRetries) {
+          tried.length = 0;
+          continue;
+        }
+        if (lastError) throw lastError;
         throw new ProviderError(
           'provider_down',
           'No available providers',
@@ -393,6 +424,7 @@ export class ProviderRouter {
       }
 
       const cb = this.circuitBreakers.get(provider.id)!;
+      let yielded = false;
 
       try {
         const registration = this.providers.get(provider.id);
@@ -400,6 +432,7 @@ export class ProviderRouter {
         const stream = provider.stream(providerRequest, signal);
 
         for await (const chunk of stream) {
+          yielded = true;
           yield chunk;
         }
 
@@ -407,20 +440,21 @@ export class ProviderRouter {
         this.healthCache.set(provider.id, Date.now() + 30_000);
         return;
       } catch (error) {
+        if (signal.aborted) throw abortError(signal);
         lastError = error instanceof Error ? error : new Error(String(error));
-        cb.recordFailure();
-        tried.push(provider.id);
-
         if (error instanceof ProviderError && error.code === 'rate_limited') {
           this.quotaLedger.recordRateLimit(
             provider.id,
             error.retryAfter || 60
           );
+        } else if (isProviderOutage(lastError)) {
+          cb.recordFailure();
         }
+        // Once text has reached the caller, retrying another provider would
+        // duplicate the answer. Fail the stream instead.
+        if (yielded) throw lastError;
+        tried.push(provider.id);
 
-        if (error instanceof ProviderError && !error.retryable) {
-          throw error;
-        }
         if (attempt + 1 < this.config.maxRetries && !signal.aborted) {
           const waitMs = Math.min(2500, 400 * (attempt + 1));
           await new Promise((resolve) => setTimeout(resolve, waitMs));
@@ -437,6 +471,7 @@ export class ProviderRouter {
       enabled: boolean;
       priority: number;
       circuitState: CircuitState;
+      transcriptionCircuitState: CircuitState;
       rateLimited: boolean;
     }>;
     quota: QuotaUsage[];
@@ -446,6 +481,7 @@ export class ProviderRouter {
       enabled: rp.enabled,
       priority: rp.priority,
       circuitState: this.circuitBreakers.get(rp.provider.id)!.getState(),
+      transcriptionCircuitState: this.transcriptionBreakers.get(rp.provider.id)!.getState(),
       rateLimited: this.quotaLedger.isRateLimited(rp.provider.id),
     }));
 
@@ -457,6 +493,9 @@ export class ProviderRouter {
 
   reset(): void {
     for (const cb of this.circuitBreakers.values()) {
+      cb.reset();
+    }
+    for (const cb of this.transcriptionBreakers.values()) {
       cb.reset();
     }
     this.quotaLedger.reset();

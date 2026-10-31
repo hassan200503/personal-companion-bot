@@ -3,6 +3,8 @@ import type {
   ChatCompletionRequest,
   ChatCompletionResponse,
   ChatCompletionChunk,
+  AudioTranscriptionRequest,
+  AudioTranscriptionResult,
   HealthStatus,
   ProviderCapabilities,
 } from './contracts.js';
@@ -21,8 +23,16 @@ export interface MockProviderConfig {
   completeError?: ProviderError;
   /** Error to throw on stream */
   streamError?: ProviderError;
+  /** Error to throw on transcribe */
+  transcribeError?: ProviderError;
   /** Fixed response content */
   responseContent?: string;
+  /** Fixed transcription text */
+  transcript?: string;
+  /** Simulate transient complete failures before succeeding */
+  completeFailures?: number;
+  /** Simulate transient transcription failures before succeeding */
+  transcribeFailures?: number;
   /** Should simulate rate limit (429) */
   rateLimited?: boolean;
   /** Rate limit retry-after seconds */
@@ -40,11 +50,16 @@ export class MockProvider implements ChatProvider {
   private config: MockProviderConfig;
   private completeCalls: ChatCompletionRequest[] = [];
   private streamCalls: ChatCompletionRequest[] = [];
+  private transcribeCalls: AudioTranscriptionRequest[] = [];
+  private remainingCompleteFailures: number;
+  private remainingTranscribeFailures: number;
 
   constructor(config: MockProviderConfig = {}) {
     this.id = config.id || 'mock-provider';
     this.name = config.name || 'Mock Provider';
     this.config = config;
+    this.remainingCompleteFailures = config.completeFailures ?? 0;
+    this.remainingTranscribeFailures = config.transcribeFailures ?? 0;
   }
 
   async capabilities(): Promise<ProviderCapabilities> {
@@ -86,6 +101,11 @@ export class MockProvider implements ChatProvider {
     }
 
     await this.simulateLatency();
+
+    if (this.remainingCompleteFailures > 0) {
+      this.remainingCompleteFailures -= 1;
+      throw new ProviderError('provider_down', 'Transient mock failure', true);
+    }
 
     if (this.config.rateLimited) {
       throw new ProviderError(
@@ -156,6 +176,47 @@ export class MockProvider implements ChatProvider {
     yield { delta: '', finishReason: 'stop' };
   }
 
+  async transcribe(
+    request: AudioTranscriptionRequest,
+    signal: AbortSignal
+  ): Promise<AudioTranscriptionResult> {
+    this.transcribeCalls.push(request);
+
+    if (signal.aborted) {
+      throw new Error('Request cancelled');
+    }
+
+    await this.simulateLatency();
+
+    if (this.remainingTranscribeFailures > 0) {
+      this.remainingTranscribeFailures -= 1;
+      throw new ProviderError('provider_down', 'Transient mock transcription failure', true);
+    }
+
+    if (this.config.rateLimited) {
+      throw new ProviderError(
+        'rate_limited',
+        'Rate limit exceeded',
+        true,
+        this.config.retryAfter || 60
+      );
+    }
+
+    if (this.config.transcribeError) {
+      throw this.config.transcribeError;
+    }
+
+    return {
+      text: this.config.transcript ?? 'Mock transcript',
+      model: request.model,
+    };
+  }
+
+  /** Get recorded transcribe calls */
+  getTranscribeCalls(): AudioTranscriptionRequest[] {
+    return [...this.transcribeCalls];
+  }
+
   /** Get recorded complete calls */
   getCompleteCalls(): ChatCompletionRequest[] {
     return [...this.completeCalls];
@@ -170,6 +231,7 @@ export class MockProvider implements ChatProvider {
   reset(): void {
     this.completeCalls = [];
     this.streamCalls = [];
+    this.transcribeCalls = [];
   }
 
   /** Update configuration */

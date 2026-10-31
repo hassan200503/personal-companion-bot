@@ -32,6 +32,8 @@ export interface Conversation {
 export interface ConversationStore {
   loadAll(): Conversation[];
   saveConversation(conversation: Conversation): void;
+  /** Fast path for appending one turn without rewriting the whole history. */
+  appendMessage?(conversation: Conversation, message: ConversationMessage): void;
   deleteConversation(id: string): void;
 }
 

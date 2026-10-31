@@ -42,6 +42,7 @@ declare global {
       chatCreateConversation(title?: string): Promise<any>;
       chatGetConversation(id: string): Promise<any>;
       chatSendMessage(conversationId: string, content: string, channel?: 'voice' | 'text'): Promise<any>;
+      chatAbort(): Promise<any>;
       chatDeleteConversation(id: string): Promise<any>;
       privacyExport(): Promise<any>;
       privacyDeleteAll(): Promise<any>;

@@ -162,7 +162,7 @@ export const PROVIDER_CATALOG: ProviderCatalogEntry[] = [
     privacyNote: 'Google states that free-tier API content may be used to improve products; review current terms before connecting.',
     pricingNote: 'Free tier availability and limits can change; Companion does not assume a fixed quota.', freeTier: true,
     guideSteps: ['Open Google AI Studio and create an API key', 'Paste it into Companion; it is stored in Windows Credential Manager', 'Companion tests the key before saving it'],
-    models: ['gemini-2.5-flash-lite'], lastVerified: '2026-10-26', factory: (key) => createGeminiProvider(key),
+    models: ['gemini-3.5-flash-lite'], lastVerified: '2026-10-31', factory: (key) => createGeminiProvider(key),
   },
   {
     id: 'openrouter', displayName: 'OpenRouter', onboardingMode: 'assisted',
@@ -421,7 +421,14 @@ class GeminiProvider implements ChatProvider {
   }
 
   async transcribe(request: AudioTranscriptionRequest, signal: AbortSignal): Promise<AudioTranscriptionResult> {
-    const model = request.model ?? this.selectedModel ?? 'gemini-2.5-flash-lite';
+    let model = request.model ?? this.selectedModel;
+    if (!model) {
+      const health = await this.healthCheck();
+      if (!health.healthy || !this.selectedModel) {
+        throw health.error ?? new ProviderError('provider_down', 'Gemini model discovery failed', true);
+      }
+      model = this.selectedModel;
+    }
     const response = await fetch(`${this.endpoint(model)}:generateContent?key=${encodeURIComponent(this.apiKey)}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -572,6 +579,13 @@ export function getProvidersByMode(mode: 'oauth' | 'assisted' | 'manual'): Provi
 export function getProviderModels(id: string): string[] {
   const entry = getProviderEntry(id);
   return entry?.models || [];
+}
+
+/** True when a provider model was pulled from the active catalog but still ships in its retired list. */
+export function isRetiredProviderModel(providerId: string, model: string): boolean {
+  const active = getProviderEntry(providerId)?.models ?? [];
+  const retired = RETIRED_PROVIDER_CATALOG.find((entry) => entry.id === providerId)?.models ?? [];
+  return retired.includes(model) && !active.includes(model);
 }
 
 export interface DiscoveredModel {

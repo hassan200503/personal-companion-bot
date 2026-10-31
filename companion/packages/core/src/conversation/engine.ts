@@ -35,6 +35,7 @@ export class DefaultConversationEngine implements ConversationEngine {
 
   private readonly conversationStore?: ConversationStore;
   private conversations = new Map<string, Conversation>();
+  private conversationLocks = new Map<string, Promise<void>>();
   private degraded = false;
   private memoryRetriever?: (query: string) => Promise<string[]>;
   private memoryRecorder?: (user: string, assistant: string) => Promise<void>;
@@ -119,11 +120,26 @@ export class DefaultConversationEngine implements ConversationEngine {
     userContent: string,
     signal: AbortSignal
   ): Promise<ConversationMessage> {
+    const release = await this.acquireConversation(conversationId);
+    try {
+      return await this.sendMessageUnlocked(conversationId, userContent, signal);
+    } finally {
+      release();
+    }
+  }
+
+  private async sendMessageUnlocked(
+    conversationId: string,
+    userContent: string,
+    signal: AbortSignal
+  ): Promise<ConversationMessage> {
     const conv = this.conversations.get(conversationId);
     if (!conv) {
       throw new ConversationError('not_found', `Conversation ${conversationId} not found`);
     }
 
+    const systemPrompt = this.systemPrompt;
+    const model = this.resolveModel();
     const now = this.now().toISOString();
     const userMsg: ConversationMessage = {
       id: this.idFactory(),
@@ -134,7 +150,7 @@ export class DefaultConversationEngine implements ConversationEngine {
     };
     conv.messages.push(userMsg);
     conv.updatedAt = now;
-    this.conversationStore?.saveConversation(conv);
+    this.persistMessage(conv, userMsg);
 
     let memorySnippets: string[] = [];
     if (this.memoryRetriever) {
@@ -145,25 +161,25 @@ export class DefaultConversationEngine implements ConversationEngine {
       }
     }
 
-    const messages = this.buildMessages(conv, memorySnippets);
+    const messages = this.buildMessages(conv, memorySnippets, systemPrompt);
 
     let response: ChatCompletionResponse;
     try {
       if (this.cognition) {
         try {
-          const result = await this.decide(messages, userContent, memorySnippets, signal);
+          const result = await this.decide(messages, memorySnippets, signal, systemPrompt, model);
           response = { model: result.model, content: result.content, finishReason: 'stop', metadata: { providerId: result.providerId } };
         } catch {
           // Fall back to a direct completion so the owner always gets a reply
           // even when the provider cannot satisfy the typed cognition contract.
           response = await this.router.complete(
-            { model: this.resolveModel(), messages, maxTokens: this.maxOutputTokens, temperature: this.temperature },
+            { model, messages, maxTokens: this.maxOutputTokens, temperature: this.temperature },
             signal
           );
         }
       } else {
         response = await this.router.complete(
-          { model: this.resolveModel(), messages, maxTokens: this.maxOutputTokens, temperature: this.temperature },
+          { model, messages, maxTokens: this.maxOutputTokens, temperature: this.temperature },
           signal
         );
       }
@@ -195,7 +211,7 @@ export class DefaultConversationEngine implements ConversationEngine {
     };
     conv.messages.push(assistantMsg);
     conv.updatedAt = assistantMsg.createdAt;
-    this.conversationStore?.saveConversation(conv);
+    this.persistMessage(conv, assistantMsg);
 
     if (this.memoryRecorder) {
       void this.memoryRecorder(userContent, response.content).catch(() => {
@@ -211,8 +227,21 @@ export class DefaultConversationEngine implements ConversationEngine {
     userContent: string,
     signal: AbortSignal
   ): AsyncIterable<string> {
+    const release = await this.acquireConversation(conversationId);
+    try {
+      yield* this.streamMessageUnlocked(conversationId, userContent, signal);
+    } finally {
+      release();
+    }
+  }
+
+  private async *streamMessageUnlocked(
+    conversationId: string,
+    userContent: string,
+    signal: AbortSignal
+  ): AsyncIterable<string> {
     if (this.cognition) {
-      const reply = await this.sendMessage(conversationId, userContent, signal);
+      const reply = await this.sendMessageUnlocked(conversationId, userContent, signal);
       yield reply.content;
       return;
     }
@@ -221,6 +250,8 @@ export class DefaultConversationEngine implements ConversationEngine {
       throw new ConversationError('not_found', `Conversation ${conversationId} not found`);
     }
 
+    const systemPrompt = this.systemPrompt;
+    const model = this.resolveModel();
     const now = this.now().toISOString();
     const userMsg: ConversationMessage = {
       id: this.idFactory(),
@@ -231,7 +262,7 @@ export class DefaultConversationEngine implements ConversationEngine {
     };
     conv.messages.push(userMsg);
     conv.updatedAt = now;
-    this.conversationStore?.saveConversation(conv);
+    this.persistMessage(conv, userMsg);
 
     let memorySnippets: string[] = [];
     if (this.memoryRetriever) {
@@ -242,13 +273,13 @@ export class DefaultConversationEngine implements ConversationEngine {
       }
     }
 
-    const messages = this.buildMessages(conv, memorySnippets);
+    const messages = this.buildMessages(conv, memorySnippets, systemPrompt);
 
     let accumulated = '';
     try {
       const stream = this.router.stream(
         {
-          model: this.defaultModel,
+          model,
           messages,
           maxTokens: this.maxOutputTokens,
           temperature: this.temperature,
@@ -281,12 +312,12 @@ export class DefaultConversationEngine implements ConversationEngine {
       role: 'assistant',
       content: accumulated,
       createdAt: this.now().toISOString(),
-      model: this.defaultModel || undefined,
+      model: model || undefined,
       status: 'completed',
     };
     conv.messages.push(assistantMsg);
     conv.updatedAt = assistantMsg.createdAt;
-    this.conversationStore?.saveConversation(conv);
+    this.persistMessage(conv, assistantMsg);
 
     if (this.memoryRecorder) {
       void this.memoryRecorder(userContent, accumulated).catch(() => {
@@ -295,10 +326,36 @@ export class DefaultConversationEngine implements ConversationEngine {
     }
   }
 
-  private buildMessages(conv: Conversation, memorySnippets: string[]): ChatMessage[] {
+  private persistMessage(conv: Conversation, message: ConversationMessage): void {
+    if (!this.conversationStore) return;
+    if (this.conversationStore.appendMessage) {
+      this.conversationStore.appendMessage(conv, message);
+      return;
+    }
+    this.conversationStore.saveConversation(conv);
+  }
+
+  private async acquireConversation(conversationId: string): Promise<() => void> {
+    const previous = this.conversationLocks.get(conversationId) ?? Promise.resolve();
+    let releaseGate!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      releaseGate = resolve;
+    });
+    const tail = previous.then(() => gate, () => gate);
+    this.conversationLocks.set(conversationId, tail);
+    await previous.catch(() => undefined);
+    return () => {
+      releaseGate();
+      if (this.conversationLocks.get(conversationId) === tail) {
+        this.conversationLocks.delete(conversationId);
+      }
+    };
+  }
+
+  private buildMessages(conv: Conversation, memorySnippets: string[], systemPrompt: string | undefined): ChatMessage[] {
     const msgs: ChatMessage[] = [];
 
-    let systemContent = this.systemPrompt ?? '';
+    let systemContent = systemPrompt ?? '';
     if (memorySnippets.length > 0) {
       const mem = memorySnippets.map((s) => `- ${s}`).join('\n');
       systemContent = systemContent
@@ -322,15 +379,16 @@ export class DefaultConversationEngine implements ConversationEngine {
 
   private async decide(
     messages: ChatMessage[],
-    userContent: string,
     memorySnippets: string[],
-    signal: AbortSignal
+    signal: AbortSignal,
+    systemPrompt: string | undefined,
+    model: string
   ): Promise<{ content: string; model: string; providerId: string }> {
     const sources: DecisionSource[] = this.router.getProviders().map((registration) => ({
       id: registration.provider.id,
       complete: async (prompt, sourceSignal) => {
         const result = await registration.provider.complete({
-          model: registration.model ?? this.defaultModel,
+          model: registration.model ?? model,
           messages: [{ role: 'system', content: prompt }],
           maxTokens: this.maxOutputTokens,
           temperature: this.temperature,
@@ -343,22 +401,22 @@ export class DefaultConversationEngine implements ConversationEngine {
       self: {
         identity: this.cognition!.self.identity,
         style: this.cognition!.self.style,
-        policy: `${this.cognition!.self.policy}\n${this.systemPrompt ?? ''}`,
+        policy: `${this.cognition!.self.policy}\n${systemPrompt ?? ''}`,
       },
       ownerModel: this.cognition!.ownerModel,
       situation: this.cognition!.situation?.() ?? '',
       memories: memorySnippets,
-      recentTurns: [...messages, { role: 'user', content: userContent }],
+      recentTurns: messages,
       toolSchemas: this.cognition!.toolSchemas,
       outputContract: 'Return a valid TurnDecision JSON object. Plans are proposals only; the host validates and executes tools.',
     });
     const result = await new DecisionOrchestrator(sources).decide(packet, signal);
     const provider = this.router.getProvider(result.providerId);
-    const model = this.router.getProviders().find((item) => item.provider.id === result.providerId)?.model
-      ?? this.defaultModel
+    const modelName = this.router.getProviders().find((item) => item.provider.id === result.providerId)?.model
+      ?? model
       ?? provider?.id
       ?? 'unknown';
-    return { content: result.decision.speech.text, model, providerId: result.providerId };
+    return { content: result.decision.speech.text, model: modelName, providerId: result.providerId };
   }
 
   resetDegraded(): void {

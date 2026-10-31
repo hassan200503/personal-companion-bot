@@ -35,6 +35,7 @@ const api = Object.freeze({
   chatGetConversation: (id: string) : Promise<unknown> => ipcRenderer.invoke(ipcChannels.chatGetConversation, sessionToken, id),
   chatSendMessage: (conversationId: string, content: string, channel?: 'voice' | 'text') : Promise<unknown> =>
     ipcRenderer.invoke(ipcChannels.chatSendMessage, sessionToken, conversationId, content, channel),
+  chatAbort: (): Promise<unknown> => ipcRenderer.invoke(ipcChannels.chatAbort, sessionToken),
   chatDeleteConversation: (id: string): Promise<unknown> => ipcRenderer.invoke(ipcChannels.chatDeleteConversation, sessionToken, id),
   appCheckUpdates: (): Promise<unknown> => ipcRenderer.invoke(ipcChannels.appCheckUpdates, sessionToken),
   privacyExport: () : Promise<unknown> => ipcRenderer.invoke(ipcChannels.privacyExport, sessionToken),

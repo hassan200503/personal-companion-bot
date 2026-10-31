@@ -42,6 +42,7 @@ export const ipcChannels = {
   chatListConversations: 'chat:listConversations',
   chatCreateConversation: 'chat:createConversation',
   chatSendMessage: 'chat:sendMessage',
+  chatAbort: 'chat:abort',
   chatGetConversation: 'chat:getConversation',
   chatDeleteConversation: 'chat:deleteConversation',
   privacyExport: 'privacy:export',

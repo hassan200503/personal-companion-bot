@@ -153,4 +153,43 @@ describe('DefaultConversationEngine', () => {
     expect(typedProvider.getCompleteCalls()[0]?.jsonMode).toBe(true);
   });
 
+  it('serializes concurrent turns for the same conversation', async () => {
+    mock.setConfig({ latency: 10 });
+    const conv = engine.createConversation();
+    await Promise.all([
+      engine.sendMessage(conv.id, 'A', new AbortController().signal),
+      engine.sendMessage(conv.id, 'B', new AbortController().signal),
+    ]);
+    const calls = mock.getCompleteCalls();
+    expect(calls).toHaveLength(2);
+    const first = calls[0]!.messages;
+    expect(first.filter((m) => m.role === 'user').map((m) => m.content)).toEqual(['A']);
+    expect(first.some((m) => m.role === 'assistant')).toBe(false);
+    const second = calls[1]!.messages;
+    expect(second.filter((m) => m.role === 'user').map((m) => m.content)).toEqual(['A', 'B']);
+    expect(second.some((m) => m.role === 'assistant' && m.content === 'Hello from mock')).toBe(true);
+    const roles = engine.getConversation(conv.id)!.messages.map((m) => m.role);
+    expect(roles).toEqual(['system', 'user', 'assistant', 'user', 'assistant']);
+  });
+
+  it('snapshots the system prompt at the start of a turn', async () => {
+    const e = new DefaultConversationEngine({
+      router,
+      systemPrompt: 'VOICE',
+      defaultModel: 'mock-model',
+      memoryRetriever: async () => {
+        await new Promise((resolve) => setTimeout(resolve, 20));
+        return [];
+      },
+    });
+    const conv = e.createConversation();
+    const pending = e.sendMessage(conv.id, 'Hi', new AbortController().signal);
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    e.setSystemPrompt('TEXT');
+    await pending;
+    const system = mock.getCompleteCalls().at(-1)?.messages.find((m) => m.role === 'system');
+    expect(system?.content).toContain('VOICE');
+    expect(system?.content).not.toContain('TEXT');
+  });
+
 });

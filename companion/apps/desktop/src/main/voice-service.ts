@@ -1,5 +1,5 @@
 import { spawn, type ChildProcess } from 'node:child_process';
-import { existsSync, writeFileSync } from 'node:fs';
+import { existsSync, writeFileSync, unlinkSync } from 'node:fs';
 import { createInterface } from 'node:readline';
 import { join } from 'node:path';
 import {
@@ -63,6 +63,7 @@ export class VoiceService {
   private readonly onEvent?: (event: VoiceServiceEvent) => void;
   private readonly tracker = new VoiceSessionTracker();
   private listener: ListenerHandle | null = null;
+  private listenerScriptPath: string | null = null;
   private startPromise: Promise<VoiceStartResult> | null = null;
   private speakingProcess: ChildProcess | null = null;
   private lastError: string | undefined;
@@ -224,7 +225,9 @@ export class VoiceService {
       try { await this.startPromise; } catch { /* ignore */ }
     }
     const listener = this.listener;
+    const scriptPath = this.listenerScriptPath;
     this.listener = null;
+    this.listenerScriptPath = null;
     if (!listener) {
       this.tracker.stop();
       this.emitState('off');
@@ -233,6 +236,9 @@ export class VoiceService {
     listener.stopping = true;
     try { listener.process.stdin?.write('stop\n'); } catch { /* ignore */ }
     setTimeout(() => killQuietly(listener.process), 750).unref();
+    if (scriptPath) {
+      try { unlinkSync(scriptPath); } catch { /* ignore ENOENT */ }
+    }
     this.tracker.stop();
     this.emitState('off');
     return { stopped: true };
@@ -379,7 +385,12 @@ export class VoiceService {
     this.stopSpeaking(false);
     if (this.listener) this.listener.stopping = true;
     killQuietly(this.listener?.process ?? null);
+    const scriptPath = this.listenerScriptPath;
     this.listener = null;
+    this.listenerScriptPath = null;
+    if (scriptPath) {
+      try { unlinkSync(scriptPath); } catch { /* ignore ENOENT */ }
+    }
     this.tracker.stop();
   }
 
@@ -422,6 +433,7 @@ export class VoiceService {
 
   private async startPowerShell(previousError?: string): Promise<VoiceStartResult> {
     const scriptPath = join(this.tempDir, `companion-listen-${process.pid}.ps1`);
+    this.listenerScriptPath = scriptPath;
     const script = [
       'Add-Type -AssemblyName System.Speech',
       '$ErrorActionPreference = "Stop"',
@@ -559,6 +571,7 @@ export class VoiceService {
         settled = true;
         clearTimeout(timer);
         if (this.speakingProcess === child) this.speakingProcess = null;
+        try { unlinkSync(scriptPath); } catch { /* ignore ENOENT */ }
         resolve(result);
       };
       const timer = setTimeout(() => {
