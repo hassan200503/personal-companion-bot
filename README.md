@@ -44,17 +44,17 @@ Companion AI is a sophisticated Windows desktop application that represents the 
 *Innovative AI brain design with neural network nodes, voice waves, and orbiting elements*
 
 ### Main Chat Interface
-![Main Interface](https://raw.githubusercontent.com/hassan200503/personal-companion-bot/main/companion/apps/desktop/resources/icon.svg)
+![Main Interface](https://raw.githubusercontent.com/hassan200503/personal-companion-bot/main/docs/screenshots/main-interface.png)
 
 *Modern dark-themed interface with voice dock, real-time transcription, and context-aware AI responses*
 
 ### Settings & Credential Management
-![Settings](https://raw.githubusercontent.com/hassan200503/personal-companion-bot/main/companion/apps/desktop/resources/icon.svg)
+![Settings](https://raw.githubusercontent.com/hassan200503/personal-companion-bot/main/docs/screenshots/settings-panel.png)
 
 *Enterprise-grade settings for secure credential entry (PayPal, Gmail, AI providers) via Windows Credential Manager*
 
 ### Autonomous Dashboard
-![Dashboard](https://raw.githubusercontent.com/hassan200503/personal-companion-bot/main/companion/apps/desktop/resources/icon.svg)
+![Dashboard](https://raw.githubusercontent.com/hassan200503/personal-companion-bot/main/docs/screenshots/autonomous-dashboard.png)
 
 *Goal tracking with approval workflows, financial oversight, and risk assessment*
 
