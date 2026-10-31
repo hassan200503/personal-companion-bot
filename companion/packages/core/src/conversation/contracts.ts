@@ -55,6 +55,12 @@ export interface ConversationEngineOptions {
     toolSchemas?: readonly string[];
     situation?: () => string;
   };
+  episodeLogger?: {
+    startEpisode: (conversationId: string) => string;
+    recordMessage: (episodeId: string, message: ConversationMessage) => void;
+    recordToolUse: (episodeId: string, toolName: string, success: boolean, riskClass: number) => void;
+    endEpisode: (episodeId: string, outcome?: 'success' | 'partial' | 'failed') => void;
+  };
 }
 
 export class ConversationError extends Error {

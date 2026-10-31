@@ -42,6 +42,7 @@ export class DefaultConversationEngine implements ConversationEngine {
   private memoryRecorder?: (user: string, assistant: string) => Promise<void>;
   private readonly cognition?: ConversationEngineOptions['cognition'];
   private readonly responseCache: ResponseCache;
+  private readonly episodeLogger?: ConversationEngineOptions['episodeLogger'];
 
   constructor(options: ConversationEngineOptions) {
     this.router = options.router;
@@ -57,6 +58,7 @@ export class DefaultConversationEngine implements ConversationEngine {
     this.cognition = options.cognition;
     this.conversationStore = options.conversationStore;
     this.responseCache = new ResponseCache(100, 5 * 60 * 1000); // 100 entries, 5 min TTL
+    this.episodeLogger = options.episodeLogger;
     if (this.conversationStore) {
       for (const c of this.conversationStore.loadAll()) {
         this.conversations.set(c.id, c);
@@ -141,6 +143,12 @@ export class DefaultConversationEngine implements ConversationEngine {
       throw new ConversationError('not_found', `Conversation ${conversationId} not found`);
     }
 
+    // Start episode if not already tracking
+    let episodeId: string | null = null;
+    if (this.episodeLogger) {
+      episodeId = this.episodeLogger.startEpisode(conversationId);
+    }
+
     const systemPrompt = this.systemPrompt;
     const model = this.resolveModel();
     const now = this.now().toISOString();
@@ -154,6 +162,11 @@ export class DefaultConversationEngine implements ConversationEngine {
     conv.messages.push(userMsg);
     conv.updatedAt = now;
     this.persistMessage(conv, userMsg);
+
+    // Record user message in episode
+    if (episodeId && this.episodeLogger) {
+      this.episodeLogger.recordMessage(episodeId, userMsg);
+    }
 
     let memorySnippets: string[] = [];
     if (this.memoryRetriever) {
@@ -206,6 +219,12 @@ export class DefaultConversationEngine implements ConversationEngine {
       }
     } catch (error) {
       this.degraded = true;
+      
+      // End episode with failure outcome
+      if (episodeId && this.episodeLogger) {
+        this.episodeLogger.endEpisode(episodeId, 'failed');
+      }
+      
       if (signal.aborted) {
         throw new ConversationError('aborted', 'Request aborted');
       }
@@ -236,6 +255,12 @@ export class DefaultConversationEngine implements ConversationEngine {
     conv.messages.push(assistantMsg);
     conv.updatedAt = assistantMsg.createdAt;
     this.persistMessage(conv, assistantMsg);
+
+    // Record assistant message in episode and end episode
+    if (episodeId && this.episodeLogger) {
+      this.episodeLogger.recordMessage(episodeId, assistantMsg);
+      this.episodeLogger.endEpisode(episodeId, 'success');
+    }
 
     if (this.memoryRecorder) {
       void this.memoryRecorder(userContent, response.content).catch(() => {
@@ -274,6 +299,12 @@ export class DefaultConversationEngine implements ConversationEngine {
       throw new ConversationError('not_found', `Conversation ${conversationId} not found`);
     }
 
+    // Start episode if not already tracking
+    let episodeId: string | null = null;
+    if (this.episodeLogger) {
+      episodeId = this.episodeLogger.startEpisode(conversationId);
+    }
+
     const systemPrompt = this.systemPrompt;
     const model = this.resolveModel();
     const now = this.now().toISOString();
@@ -287,6 +318,11 @@ export class DefaultConversationEngine implements ConversationEngine {
     conv.messages.push(userMsg);
     conv.updatedAt = now;
     this.persistMessage(conv, userMsg);
+
+    // Record user message in episode
+    if (episodeId && this.episodeLogger) {
+      this.episodeLogger.recordMessage(episodeId, userMsg);
+    }
 
     let memorySnippets: string[] = [];
     if (this.memoryRetriever) {
@@ -316,6 +352,12 @@ export class DefaultConversationEngine implements ConversationEngine {
       }
     } catch (error) {
       this.degraded = true;
+      
+      // End episode with failure outcome
+      if (episodeId && this.episodeLogger) {
+        this.episodeLogger.endEpisode(episodeId, 'failed');
+      }
+      
       if (signal.aborted) {
         throw new ConversationError('aborted', 'Request aborted');
       }
@@ -342,6 +384,12 @@ export class DefaultConversationEngine implements ConversationEngine {
     conv.messages.push(assistantMsg);
     conv.updatedAt = assistantMsg.createdAt;
     this.persistMessage(conv, assistantMsg);
+
+    // Record assistant message in episode and end episode
+    if (episodeId && this.episodeLogger) {
+      this.episodeLogger.recordMessage(episodeId, assistantMsg);
+      this.episodeLogger.endEpisode(episodeId, 'success');
+    }
 
     if (this.memoryRecorder) {
       void this.memoryRecorder(userContent, accumulated).catch(() => {
