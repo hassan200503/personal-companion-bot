@@ -3,7 +3,7 @@
 Last updated: 2026-10-31
 Brief: `docs/AGENT_BRIEF.md` (v3 master brief, adopted 2026-10-29). The previous handoff brief is archived at `docs/archive/AGENT_BRIEF-v1-handoff.md`.
 Current milestone: M2 Autonomous Capabilities Sprint 1-2
-Status: Sprint 1 complete (performance + WhatsApp + media). Sprint 2 started (episode logging). Owner approved gates G6, G7, G5, G3 for autonomous capabilities. Latest full verify: 54 files / 356 tests. Remaining: consolidation job, weekly review UI, recipe learning, autonomous capabilities, Gmail integration, UI improvements.
+Status: Sprint 1 complete (performance + WhatsApp + media). Sprint 2 consolidation job complete (episode logging + pattern analysis). Owner approved gates G6, G7, G5, G3 for autonomous capabilities. Latest full verify: 55 files / 363 tests. Remaining: weekly review UI, recipe learning, autonomous capabilities, Gmail integration, UI improvements.
 
 ## Recent Production Hardening (2026-10-31)
 
@@ -54,12 +54,22 @@ Status: Sprint 1 complete (performance + WhatsApp + media). Sprint 2 started (ep
 - ✅ Integration into ConversationEngine (sendMessage/streamMessage)
 - ✅ 9 new tests for episode logger
 
+**Consolidation Job (Complete):**
+- ✅ ConsolidationEngine: Analyzes episodes to extract patterns
+- ✅ Topic pattern extraction (preferences from frequent discussions)
+- ✅ Tool pattern extraction (habits from frequent tool usage)
+- ✅ Time-based pattern detection (routines from hour-topic associations)
+- ✅ Recipe pattern extraction (successful tool sequences)
+- ✅ Fact proposal with evidence and confidence scores
+- ✅ Configurable thresholds and max episodes per run
+- ✅ 7 new tests for consolidation engine
+
 **Test Results:**
-- 54 files / 356 tests passing (up from 347)
+- 55 files / 363 tests passing (up from 347)
 - 0 type errors
 
-**Status:** Sprint 2 started - episode logging complete.
-**Next:** Consolidation job, weekly review UI, recipe learning.
+**Status:** Sprint 2 consolidation job complete.
+**Next:** Weekly review UI, recipe learning.
 
 **G014 Implementation:**
 - executor.ts: Added read-back branch in tool execution flow
