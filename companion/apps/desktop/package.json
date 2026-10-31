@@ -51,6 +51,7 @@
     "files": [
       "dist/**/*",
       "package.json",
+      "resources/icon.svg",
       "node_modules/**/*",
       "!node_modules/.bin/**",
       "!node_modules/node-addon-api/**",
@@ -73,7 +74,8 @@
           ]
         }
       ],
-      "artifactName": "${productName}-${version}-${arch}.${ext}"
+      "artifactName": "${productName}-${version}-${arch}.${ext}",
+      "icon": "resources/icon.svg"
     },
     "nsis": {
       "oneClick": false,
